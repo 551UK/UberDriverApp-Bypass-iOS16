@@ -50,13 +50,6 @@ jobs:
           xcrun lipo "$dylib" -verify_arch arm64 arm64e
           plutil -lint "$filter"
 
-      - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: UberDriverApp-Bypass-iOS16-v0.4.0
-          path: packages/*.deb
-          if-no-files-found: error
-
       - name: Publish GitHub Release
         if: github.event_name != 'pull_request'
         uses: ncipollo/release-action@v1
