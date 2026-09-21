@@ -41,7 +41,7 @@ jobs:
           test -n "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
           test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64"
-          test "$(dpkg-deb -f "$deb" Version)" = "0.4.0"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.5.0"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/uberdriver-check"
           dylib="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.dylib"
           filter="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.plist"
@@ -54,12 +54,12 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: ncipollo/release-action@v1
         with:
-          tag: v0.4.0
-          name: UberDriverApp Bypass iOS 16 v0.4.0
+          tag: v0.5.0
+          name: UberDriverApp Bypass iOS 16 v0.5.0
           body: |
-            Go Online app-version blocker compatibility candidate for Uber Driver 4.527.10000.
+            Native Cronet Go Online app-version compatibility candidate for Uber Driver 4.527.10000.
 
-            Targets the remaining app-version Required Action that appears when pressing Go Online. The iOS-version warning changed to an app-version warning in testing, showing the OS identity path is now being accepted. v0.4.0 adds exact hooks for DriverChecksErrorData.issues/futureBlockers, filters only force-app-upgrade issue objects, and also spoofs the newer UBBuildUUID alongside app/continuous version metadata. Other Required Actions remain untouched. Install v0.4.0, respring, fully kill Uber Driver, reopen it and press Go Online. The capped Documents/UberDriverBypass.log records only hook/rewrite status and no account, location or request content.
+            The remaining blocker is now specifically app-version based. v0.5.0 hooks Cronet's exported C request-header API at the native request boundary and forces Uber app-version headers to 4.584.10000, covering requests that bypass NSURLSession/NSMutableURLRequest hooks. Existing OS identity, UBBuildUUID, continuous-version and DriverChecks filtering remain in place. Install v0.5.0, respring, fully kill Uber Driver, reopen it and press Go Online. Documents/UberDriverBypass.log records only hook/rewrite status.
           artifacts: packages/*.deb
           artifactErrorsFailBuild: true
           allowUpdates: true
