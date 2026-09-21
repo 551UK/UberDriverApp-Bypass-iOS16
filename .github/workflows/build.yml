@@ -40,7 +40,7 @@ jobs:
           test -n "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
           test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64"
-          test "$(dpkg-deb -f "$deb" Version)" = "0.2.1"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.3.0"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/uberdriver-check"
           dylib="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.dylib"
           filter="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.plist"
@@ -52,25 +52,25 @@ jobs:
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: UberDriverApp-Bypass-iOS16-v0.2.1
+          name: UberDriverApp-Bypass-iOS16-v0.3.0
           path: packages/*.deb
           if-no-files-found: error
 
       - name: Publish GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          tag: v0.2.1
-          name: UberDriverApp Bypass iOS 16 v0.2.1
+          tag: v0.3.0
+          name: UberDriverApp Bypass iOS 16 v0.3.0
           body: |
-            Revised iOS 16 compatibility candidate for Uber Driver 4.527.10000.
+            Go Online force-upgrade blocker compatibility candidate for Uber Driver 4.527.10000.
 
-            Fixes gaps in v0.1.0: handles serialized JSON (including immutable/nested dictionaries), request bodies, bulk headers, and deviceOSVersion/plain version fields found in the supplied binaries. Removes process-wide mutable dictionary hooks.
+            Targets the blocker that appears when pressing Go Online rather than the app-launch path.
 
-            Includes a small privacy-limited Documents/UberDriverBypass.log to confirm injection and whether metadata rewrites execute. Does not log URLs, identifiers, credentials, location or request/response bodies.
+            Filters only force-upgrade entries from decoded online-blocker / driver-check data, including FORCE_UPGRADE, FORCE_APP_UPGRADE and the minVersionUrl + storeUrl version-error shape. Other Required Actions such as documents remain untouched.
 
-            Install over v0.1.0, respring, fully close and reopen Uber Driver. Enable UberDriverBypass injection in Choicy if used.
+            Also attempts to disable Objective-C-visible applicability checks on Uber's ForceUpgradeOnlineBlockerPluginFactory / ForceUpgradeBlockerAdapter and retains the request metadata compatibility rewrite as a fallback.
 
-            Build/package checks are automated. Live server acceptance still requires testing on the device. Document/account requirements remain enforced.
+            Install v0.3.0, respring, fully kill Uber Driver, reopen it and press Go Online. The capped Documents/UberDriverBypass.log records only hook/rewrite status and no account, location or request content.
           artifacts: packages/*.deb
           artifactErrorsFailBuild: true
           allowUpdates: true
