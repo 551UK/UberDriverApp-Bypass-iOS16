@@ -63,6 +63,20 @@ int main(void) {
         check([UBRewriteValueForKey(@"4.527.10000", @"unrelated") isEqual:@"4.527.10000"], @"unrelated string");
         check(UBRewriteValueForKey(NSNull.null, @"deviceOSVersion") == NSNull.null, @"null preserved");
 
+        NSDictionary *onlineBlockers = @{
+            @"issues": @[
+                @{@"typeString": @"FORCE_UPGRADE", @"minVersionUrl": @"x", @"storeUrl": @"y"},
+                @{@"typeString": @"DOCUMENTS", @"title": @"Documents"}
+            ],
+            @"forceAppUpgrade": @YES
+        };
+        NSUInteger removed = 0;
+        NSDictionary *filteredBlockers = UBFilterForceUpgradeOnlineBlockers(onlineBlockers, 0, &removed);
+        check(removed == 2, @"force upgrade blocker and boolean removed");
+        check([filteredBlockers[@"issues"] count] == 1, @"only one blocker remains");
+        check([filteredBlockers[@"issues"][0][@"typeString"] isEqual:@"DOCUMENTS"], @"document blocker preserved");
+        check([filteredBlockers[@"forceAppUpgrade"] isEqual:@NO], @"forceAppUpgrade disabled");
+
         NSString *deviceHeader =
             @"{\\\"device_os_version\\\":\\\"16.2\\\",\\\"app_version\\\":\\\"4.527.10000\\\"}";
         NSString *rewrittenHeader = UBRewriteValueForKey(deviceHeader, @"x-uber-device-data");
