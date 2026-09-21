@@ -22,8 +22,8 @@ static BOOL UBIsMainBundle(NSBundle *bundle) {
     return bundle && bundle == NSBundle.mainBundle;
 }
 
-// Only compatibility metadata is changed. No response, account, document or
-// online-blocker objects are filtered or marked successful.
+// Compatibility metadata is changed and only explicit force-upgrade online blockers
+// are filtered. Account, document and unrelated Required Actions remain untouched.
 static void UBDiagnostic(NSString *event) {
     static NSUInteger count = 0;
     @synchronized (UBTargetAppVersion) {
@@ -308,82 +308,6 @@ static id UBFilterForceUpgradeOnlineBlockers(id object, NSUInteger depth, NSUInt
     return object;
 }
 
-static BOOL UBSelectorLooksLikeApplicabilityCheck(SEL selector) {
-    NSString *name = NSStringFromSelector(selector).lowercaseString;
-    return [name containsString:@"applic"] ||
-           [name containsString:@"isenabled"] ||
-           [name containsString:@"enabledfor"] ||
-           [name containsString:@"canhandle"] ||
-           [name containsString:@"supports"] ||
-           [name containsString:@"shouldhandle"];
-}
-
-static BOOL UBForceUpgradeReturnNO(id self, SEL _cmd) {
-    (void)self; (void)_cmd;
-    return NO;
-}
-
-static void UBDisableForceUpgradeBooleanChecksOnClass(Class cls, NSString *label) {
-    if (!cls) return;
-
-    unsigned int count = 0;
-    Method *methods = class_copyMethodList(cls, &count);
-    NSUInteger hooked = 0;
-    for (unsigned int i = 0; i < count; i++) {
-        Method method = methods[i];
-        SEL selector = method_getName(method);
-        const char *encoding = method_getTypeEncoding(method);
-        if (!encoding || !UBSelectorLooksLikeApplicabilityCheck(selector)) continue;
-
-        char returnType[32] = {0};
-        method_getReturnType(method, returnType, sizeof(returnType));
-        if (returnType[0] == 'B' || returnType[0] == 'c') {
-            method_setImplementation(method, (IMP)UBForceUpgradeReturnNO);
-            hooked++;
-            UBDiagnostic([NSString stringWithFormat:@"%@ disabled %@", label, NSStringFromSelector(selector)]);
-        }
-    }
-    free(methods);
-
-    Class meta = object_getClass(cls);
-    count = 0;
-    methods = class_copyMethodList(meta, &count);
-    for (unsigned int i = 0; i < count; i++) {
-        Method method = methods[i];
-        SEL selector = method_getName(method);
-        const char *encoding = method_getTypeEncoding(method);
-        if (!encoding || !UBSelectorLooksLikeApplicabilityCheck(selector)) continue;
-
-        char returnType[32] = {0};
-        method_getReturnType(method, returnType, sizeof(returnType));
-        if (returnType[0] == 'B' || returnType[0] == 'c') {
-            method_setImplementation(method, (IMP)UBForceUpgradeReturnNO);
-            hooked++;
-            UBDiagnostic([NSString stringWithFormat:@"%@ class check disabled %@", label, NSStringFromSelector(selector)]);
-        }
-    }
-    free(methods);
-
-    UBDiagnostic([NSString stringWithFormat:@"%@ applicability hooks: %lu", label, (unsigned long)hooked]);
-}
-
-static void UBInstallForceUpgradeRuntimeHooks(void) {
-    int count = objc_getClassList(NULL, 0);
-    if (count <= 0) return;
-
-    Class *classes = (__unsafe_unretained Class *)calloc((size_t)count, sizeof(Class));
-    count = objc_getClassList(classes, count);
-    for (int i = 0; i < count; i++) {
-        Class cls = classes[i];
-        NSString *name = NSStringFromClass(cls);
-        if ([name containsString:@"ForceUpgradeOnlineBlockerPluginFactory"] ||
-            [name containsString:@"ForceUpgradeBlockerAdapter"]) {
-            UBDisableForceUpgradeBooleanChecksOnClass(cls, name);
-        }
-    }
-    free(classes);
-}
-
 static BOOL UBIsUberURL(NSURL *url) {
     NSString *host = url.host.lowercaseString;
     return [host isEqualToString:@"uber.com"] || [host hasSuffix:@".uber.com"];
@@ -656,8 +580,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.3.0 loaded; targeting Go Online force-upgrade blocker");
+        UBDiagnostic(@"UberDriverBypass 0.3.1 loaded; Go Online blocker filter active; unsafe runtime method scan removed");
         %init;
-        UBInstallForceUpgradeRuntimeHooks();
     }
 }
