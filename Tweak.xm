@@ -8,11 +8,14 @@
 #import <string.h>
 
 static NSString * const UBTargetOSVersion = @"17.0";
+static NSString * const UBTargetOSLongVersion = @"17.0.0";
 static NSString * const UBTargetOSMajor = @"17";
 static NSString * const UBTargetOSBuild = @"21A329";
 static NSString * const UBOldAppVersion = @"4.527.10000";
 static NSString * const UBTargetAppVersion = @"4.584.10000";
+static NSString * const UBOldContinuousVersion = @"273504.1";
 static NSString * const UBTargetContinuousVersion = @"326106.1";
+static NSString *UBActualOSVersion = nil;
 
 static BOOL UBIsMainBundle(NSBundle *bundle) {
     return bundle && bundle == NSBundle.mainBundle;
