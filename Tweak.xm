@@ -8,6 +8,8 @@
 #import <errno.h>
 #import <string.h>
 #import <stdlib.h>
+#import <dlfcn.h>
+#import <strings.h>
 
 static NSString * const UBTargetOSVersion = @"17.0";
 static NSString * const UBTargetOSLongVersion = @"17.0.0";
@@ -170,9 +172,22 @@ static id UBRewriteValueForKey(id value, NSString *key) {
         NSString *prefix = [v substringToIndex:digit.location];
         return numeric ? @17 : [prefix stringByAppendingString:UBTargetOSVersion];
     }
-    if ([@[@"xuberclientversion", @"xuberalsappversion", @"appversion",
-           @"clientversion", @"version", @"cfbundleversion", @"cfbundleshortversionstring"] containsObject:k]) {
-        if ([v isEqualToString:UBOldAppVersion]) return UBTargetAppVersion;
+    if ([@[@"xuberclientversion", @"xuberalsappversion", @"xuberappversion",
+           @"xuberbuildversion", @"xuberclientbuild", @"xuberclientbuildnumber",
+           @"appversion", @"clientversion", @"version",
+           @"cfbundleversion", @"cfbundleshortversionstring"] containsObject:k]) {
+        if ([v containsString:UBOldAppVersion]) {
+            return [v stringByReplacingOccurrencesOfString:UBOldAppVersion
+                                                withString:UBTargetAppVersion];
+        }
+        if ([k isEqualToString:@"xuberclientversion"] ||
+            [k isEqualToString:@"xuberalsappversion"] ||
+            [k isEqualToString:@"xuberappversion"]) {
+            // At the final network boundary these are application identity
+            // headers, so use the comparison build even if an intermediate
+            // layer formatted the old value differently.
+            return UBTargetAppVersion;
+        }
     }
     if ([@[@"ubcontinuousversion", @"continuousversion"] containsObject:k] &&
         [v isEqualToString:@"273504.1"]) return UBTargetContinuousVersion;
@@ -631,6 +646,74 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
 }
 %end
 
+
+typedef const char *(*UBCronetHeaderStringGetter)(void *);
+typedef void (*UBCronetHeaderStringSetter)(void *, const char *);
+typedef void (*UBCronetHeadersAddIMP)(void *, void *);
+
+static UBCronetHeaderStringGetter UBCronetHeaderNameGet = NULL;
+static UBCronetHeaderStringGetter UBCronetHeaderValueGet = NULL;
+static UBCronetHeaderStringSetter UBCronetHeaderValueSet = NULL;
+static UBCronetHeadersAddIMP UBOrigCronetHeadersAdd = NULL;
+
+static BOOL UBCronetIsAppVersionHeader(const char *name) {
+    if (!name) return NO;
+    return strcasecmp(name, "x-uber-client-version") == 0 ||
+           strcasecmp(name, "x-uber-als-app-version") == 0 ||
+           strcasecmp(name, "x-uber-app-version") == 0 ||
+           strcasecmp(name, "x-uber-build-version") == 0 ||
+           strcasecmp(name, "x-uber-client-build") == 0 ||
+           strcasecmp(name, "x-uber-client-build-number") == 0;
+}
+
+static void UBHookCronetHeadersAdd(void *params, void *header) {
+    if (header && UBCronetHeaderNameGet && UBCronetHeaderValueGet && UBCronetHeaderValueSet) {
+        const char *name = UBCronetHeaderNameGet(header);
+        if (UBCronetIsAppVersionHeader(name)) {
+            const char *before = UBCronetHeaderValueGet(header);
+            if (!before || strcmp(before, "4.584.10000") != 0) {
+                UBCronetHeaderValueSet(header, "4.584.10000");
+                UBDiagnostic(@"native Cronet app-version header forced to 4.584.10000");
+            } else {
+                UBDiagnostic(@"native Cronet app-version header already 4.584.10000");
+            }
+        }
+    }
+
+    if (UBOrigCronetHeadersAdd) {
+        UBOrigCronetHeadersAdd(params, header);
+    }
+}
+
+static void UBInstallNativeCronetHooks(void) {
+    NSString *frameworks = NSBundle.mainBundle.privateFrameworksPath;
+    NSString *path = [frameworks stringByAppendingPathComponent:@"Cronet.framework/Cronet"];
+    void *handle = dlopen(path.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
+    if (!handle) {
+        UBDiagnostic(@"Cronet.framework not loaded; native Cronet header hook unavailable");
+        return;
+    }
+
+    UBCronetHeaderNameGet = (UBCronetHeaderStringGetter)dlsym(handle, "Cronet_HttpHeader_name_get");
+    UBCronetHeaderValueGet = (UBCronetHeaderStringGetter)dlsym(handle, "Cronet_HttpHeader_value_get");
+    UBCronetHeaderValueSet = (UBCronetHeaderStringSetter)dlsym(handle, "Cronet_HttpHeader_value_set");
+    void *headersAdd = dlsym(handle, "Cronet_UrlRequestParams_request_headers_add");
+
+    if (!UBCronetHeaderNameGet || !UBCronetHeaderValueGet ||
+        !UBCronetHeaderValueSet || !headersAdd) {
+        UBDiagnostic(@"Cronet native symbols missing; header hook not installed");
+        return;
+    }
+
+    MSHookFunction(headersAdd,
+                   (void *)&UBHookCronetHeadersAdd,
+                   (void **)&UBOrigCronetHeadersAdd);
+
+    UBDiagnostic(UBOrigCronetHeadersAdd
+        ? @"native Cronet request-header hook installed"
+        : @"native Cronet request-header hook failed");
+}
+
 static CFTypeRef (*UBOrigCFBundleGetValueForInfoDictionaryKey)(CFBundleRef bundle, CFStringRef key) = NULL;
 static CFTypeRef UBHookCFBundleGetValueForInfoDictionaryKey(CFBundleRef bundle, CFStringRef key) {
     if (bundle == CFBundleGetMainBundle() && key && CFGetTypeID(key) == CFStringGetTypeID()) {
@@ -704,7 +787,8 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.4.0 loaded; app-version Go Online blocker targeting active");
+        UBDiagnostic(@"UberDriverBypass 0.5.0 loaded; native Cronet app-version spoof active");
+        UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)),
