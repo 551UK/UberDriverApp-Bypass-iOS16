@@ -1,30 +1,47 @@
 # UberDriverApp Bypass iOS 16
 
-Rootless compatibility candidate **0.2.1** for Uber Driver **4.527.10000** on **iOS 16.2+** (Dopamine).
+Rootless compatibility candidate **0.3.0** for Uber Driver **4.527.10000** on **iOS 16.2+** (Dopamine).
 
-## Why v0.1.0 was insufficient
+## What changed in 0.3.0
 
-The user reported the same iOS 17 blocker. The previous build changed bundle/OS strings, individual HTTP headers and mutable Objective-C dictionary setters. That did not cover immutable dictionaries, nested serialized JSON, bulk HTTP headers or already-encoded request bodies. It also missed `deviceOSVersion` and the plain `version` key.
+The force-update shown in testing is specifically a **Go Online / Required Actions blocker**, not an app-launch update screen. This build therefore targets the online-blocker path instead of treating it as a startup version check.
 
-Both supplied Carbon binaries contain `deviceOS`, `deviceOSVersion` and the `goOnline(context:driverUUID:latitude:longitude:epoch:language:device:deviceId:deviceIds:deviceModel:deviceOS:deviceSerialNumber:version:...)` signature. The old binary also references JSON serialization, request body setters, NSURLSession and Cronet. These establish metadata/transport paths to cover; they do not prove which path the live server rejection uses.
+Static comparison of the supplied 4.527.10000 and 4.584.10000 IPAs shows the older binary contains:
 
-## Changes in 0.2.1
+- `drivers/v2/fetch-online-blockers`
+- `DriverGoOnlineV2Request` / `DriverGoOnlineV2Response`
+- `DriverChecksErrorData.issues` and `futureBlockers`
+- `ForceUpgradeOnlineBlockerPluginFactory`
+- `ForceUpgradeBlockerAdapter`
+- `FORCE_UPGRADE` / `FORCE_APP_UPGRADE`
+- `DriverRequestError1Exception` fields `minVersionUrl` and `storeUrl`
 
-- Rewrites known compatibility fields when JSON is serialized, including nested immutable/Swift-bridged collections.
-- Checks uncompressed JSON bodies on Uber-domain URL requests, including data-task and in-memory upload-task entry points.
-- Covers bulk header assignment and HTTP body assignment before transport.
-- Adds `deviceOSVersion` and exact old-app `version` handling; preserves platform-only `iOS` strings and numeric JSON types.
-- Removes process-wide mutable dictionary setter hooks.
-- Retains the existing version identity: iOS 17.0 / 21A329, app 4.584.10000, continuous version 326106.1.
-- Does not alter server responses, account status, documents, trip results or online-blocker lists.
+That matches the UI appearing only when the driver attempts to go online.
 
-## Install and test
+### New targeted behavior
 
-Install the DEB from Releases over the old package, respring, then fully close and reopen Uber Driver. If using Choicy, allow UberDriverBypass for Uber Driver.
+- Filters only decoded **force-upgrade online blocker** entries from blocker/issue arrays.
+- Recognizes `FORCE_UPGRADE`, `FORCE_APP_UPGRADE`, `APP_UPGRADE` and the old go-online version-error shape containing both `minVersionUrl` and `storeUrl`.
+- Preserves document, identity, vehicle, safety and other Required Actions.
+- Disables explicit `forceAppUpgrade` / `forceUpgrade` booleans when present in decoded online-blocker data.
+- Tries to disable Objective-C-visible applicability checks on Uber's `ForceUpgradeOnlineBlockerPluginFactory` and `ForceUpgradeBlockerAdapter` at runtime.
+- Keeps the existing iOS/app-version compatibility metadata rewrite as a fallback for the actual Go Online request.
 
-This is a build-validated candidate, **not yet confirmed to pass Uber's live compatibility check**. If the iOS message remains, send `Documents/UberDriverBypass.log` from the Uber Driver data container (Filza → Apps Manager → Uber Driver → data container). The log resets at launch, is capped at 80 lines and contains only injection/rewrite status and counts. It excludes URLs, account/device identifiers, credentials, location and request/response contents. No log indicates injection or file-write failure; do not assume a server issue from that alone.
+## Test
 
-Opaque protobuf/grpc bodies are now patched only on the identified Uber device-registration paths using equal-length substitutions. Streamed, file-backed and compressed bodies are still left alone. Server-side cached device state or another transport path may still require further diagnosis. The separate documents warning must be resolved normally.
+Install **v0.3.0**, respring, fully kill Uber Driver, reopen it and press **Go Online**.
+
+The log is at:
+
+`Documents/UberDriverBypass.log`
+
+inside Uber Driver's data container. It is capped and contains only hook/rewrite status. Useful v0.3.0 lines include:
+
+- `go-online force-upgrade blocker entries removed...`
+- `ForceUpgrade... applicability hooks: ...`
+- `Uber NSURLSession request updated`
+
+If the same blocker remains and none of the decoded-response lines appear, the live path is likely Uber's protobuf/gRPC/Cronet path rather than Foundation JSON. That would narrow the next patch to the generated `DriverGoOnlineV2Request.deviceData` / blocker response model instead of adding more generic spoofing.
 
 ## IPA comparison
 
