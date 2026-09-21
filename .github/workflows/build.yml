@@ -40,7 +40,7 @@ jobs:
           test -n "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
           test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64"
-          test "$(dpkg-deb -f "$deb" Version)" = "0.2.0"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.2.1"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/uberdriver-check"
           dylib="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.dylib"
           filter="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.plist"
@@ -52,15 +52,15 @@ jobs:
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: UberDriverApp-Bypass-iOS16-v0.2.0
+          name: UberDriverApp-Bypass-iOS16-v0.2.1
           path: packages/*.deb
           if-no-files-found: error
 
       - name: Publish GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          tag: v0.2.0
-          name: UberDriverApp Bypass iOS 16 v0.2.0
+          tag: v0.2.1
+          name: UberDriverApp Bypass iOS 16 v0.2.1
           body: |
             Revised iOS 16 compatibility candidate for Uber Driver 4.527.10000.
 
