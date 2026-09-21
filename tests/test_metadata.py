@@ -104,7 +104,9 @@ with tempfile.TemporaryDirectory() as temp:
     binary = Path(temp) / "metadata"
     src.write_text(
         "#import <Foundation/Foundation.h>\n"
+        "#import <objc/runtime.h>\n"
         "#include <string.h>\n"
+        "#include <stdlib.h>\n"
         "static void UBDiagnostic(NSString *event) { (void)event; }\n"
         + constants
         + functions
