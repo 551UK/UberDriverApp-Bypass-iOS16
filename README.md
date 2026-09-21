@@ -1,30 +1,37 @@
 # UberDriverApp Bypass iOS 16
 
-Rootless compatibility tweak for **Uber Driver 4.527.10000** on **iOS 16.2+**.
+Rootless compatibility candidate **0.2.0** for Uber Driver **4.527.10000** on **iOS 16.2+** (Dopamine).
 
-The comparison target is **Uber Driver 4.584.10000**. That newer IPA has a minimum OS of **iOS 17.0**, while 4.527.10000 still launches on iOS 16.
+## Why v0.1.0 was insufficient
 
-## What this build does
+The user reported the same iOS 17 blocker. The previous build changed bundle/OS strings, individual HTTP headers and mutable Objective-C dictionary setters. That did not cover immutable dictionaries, nested serialized JSON, bulk HTTP headers or already-encoded request bodies. It also missed `deviceOSVersion` and the plain `version` key.
 
-- Presents iOS **17.0** and build **21A329** to Uber's OS-version checks and device metadata.
-- Presents Uber Driver **4.584.10000** to version checks that read the main bundle or Uber version headers.
-- Presents Uber continuous version **326106.1** where that version is queried.
-- Rewrites Uber-specific request/header keys such as `x-uber-als-device-os-version`, `x-uber-device-os-build`, `x-uber-client-version`, `device_os_version`, `os_version`, `app_version` and their camel-case equivalents.
-- Does **not** disable the Required Actions system or hide document/account blockers. The aim is to remove only the obsolete OS/app-version identity that causes the compatibility blocker.
+Both supplied Carbon binaries contain `deviceOS`, `deviceOSVersion` and the `goOnline(context:driverUUID:latitude:longitude:epoch:language:device:deviceId:deviceIds:deviceModel:deviceOS:deviceSerialNumber:version:...)` signature. The old binary also references JSON serialization, request body setters, NSURLSession and Cronet. These establish metadata/transport paths to cover; they do not prove which path the live server rejection uses.
 
-## IPA comparison used
+## Changes in 0.2.0
 
-- Older iOS 16 build: **4.527.10000**, `MinimumOSVersion = 16.2`, continuous version **273504.1**.
-- New comparison build: **4.584.10000**, `MinimumOSVersion = 17.0`, continuous version **326106.1**.
-- Both binaries contain Uber device/app-version telemetry keys and the Driver online-blocker framework.
-- The exact “Update your device's iOS version / You need iOS 17.0 or higher to receive trip requests” copy is not stored in either IPA's English localization resources, which is consistent with that blocker being delivered/configured by Uber's backend rather than being a simple local alert.
+- Rewrites known compatibility fields when JSON is serialized, including nested immutable/Swift-bridged collections.
+- Checks uncompressed JSON bodies on Uber-domain URL requests, including data-task and in-memory upload-task entry points.
+- Covers bulk header assignment and HTTP body assignment before transport.
+- Adds `deviceOSVersion` and exact old-app `version` handling; preserves platform-only `iOS` strings and numeric JSON types.
+- Removes process-wide mutable dictionary setter hooks.
+- Retains the existing version identity: iOS 17.0 / 21A329, app 4.584.10000, continuous version 326106.1.
+- Does not alter server responses, account status, documents, trip results or online-blocker lists.
 
-## Package
+## Install and test
 
-- Dopamine/rootless
-- iOS 16.2+
-- arm64 + arm64e
-- Target bundle: `com.ubercab.UberPartner`
-- Target process: `Carbon`
+Install the DEB from Releases over the old package, respring, then fully close and reopen Uber Driver. If using Choicy, allow UberDriverBypass for Uber Driver.
 
-This cannot add code or APIs that only exist in 4.584.10000. If Uber changes the server protocol in a way that the older client cannot understand, that requires a separate compatibility patch rather than another version string.
+This is a build-validated candidate, **not yet confirmed to pass Uber's live compatibility check**. If the iOS message remains, send `Documents/UberDriverBypass.log` from the Uber Driver data container (Filza → Apps Manager → Uber Driver → data container). The log resets at launch, is capped at 80 lines and contains only injection/rewrite status and counts. It excludes URLs, account/device identifiers, credentials, location and request/response contents. No log indicates injection or file-write failure; do not assume a server issue from that alone.
+
+Binary/protobuf, streamed, file-backed and compressed request bodies are not decoded. Server-side cached device state or other transport paths may require further diagnosis. The separate documents warning must be resolved normally.
+
+## IPA comparison
+
+| Field | Old app | Comparison app |
+|---|---|---|
+| App version | 4.527.10000 | 4.584.10000 |
+| Minimum iOS | 16.2 | 17.0 |
+| UBContinuousVersion | 273504.1 | 326106.1 |
+
+Target: `com.ubercab.UberPartner`, process `Carbon`; arm64 + arm64e rootless.

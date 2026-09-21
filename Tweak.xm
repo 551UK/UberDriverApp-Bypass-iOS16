@@ -18,70 +18,157 @@ static BOOL UBIsMainBundle(NSBundle *bundle) {
     return bundle && bundle == NSBundle.mainBundle;
 }
 
-static BOOL UBStringHasDigit(NSString *value) {
-    if (![value isKindOfClass:NSString.class]) return NO;
-    NSCharacterSet *digits = NSCharacterSet.decimalDigitCharacterSet;
-    return [value rangeOfCharacterFromSet:digits].location != NSNotFound;
+// Only compatibility metadata is changed. No response, account, document or
+// online-blocker objects are filtered or marked successful.
+static void UBDiagnostic(NSString *event) {
+    static NSUInteger count = 0;
+    @synchronized (UBTargetAppVersion) {
+        if (count++ >= 80) return;
+        NSString *path = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"];
+        NSString *line = [NSString stringWithFormat:@"%@ %@\n", NSDate.date, event];
+        NSFileHandle *file = [NSFileHandle fileHandleForWritingAtPath:path];
+        if (!file) { [line writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil]; return; }
+        @try { [file seekToEndOfFile]; [file writeData:[line dataUsingEncoding:NSUTF8StringEncoding]]; }
+        @catch (NSException *exception) { (void)exception; }
+        @finally { [file closeFile]; }
+    }
 }
 
-static BOOL UBKeyEquals(NSString *lower, NSArray<NSString *> *names) {
-    for (NSString *name in names) {
-        if ([lower isEqualToString:name]) return YES;
-    }
-    return NO;
+static NSString *UBNormalizedKey(NSString *key) {
+    return [[key.lowercaseString stringByReplacingOccurrencesOfString:@"_" withString:@""]
+            stringByReplacingOccurrencesOfString:@"-" withString:@""];
 }
 
-static NSString *UBRewriteValueForKey(NSString *value, NSString *key) {
-    if (![value isKindOfClass:NSString.class] || ![key isKindOfClass:NSString.class]) return value;
-
-    NSString *lower = key.lowercaseString;
-
-    if (UBKeyEquals(lower, @[
-        @"x-uber-als-device-os-version",
-        @"device_os_version",
-        @"deviceosversion",
-        @"os_version",
-        @"osversion",
-        @"osfullversion",
-        @"prevosversion"
-    ])) {
-        return UBTargetOSVersion;
-    }
-
-    if (UBKeyEquals(lower, @[@"osmajorversion", @"os_major_version"])) {
-        return UBTargetOSMajor;
-    }
-
-    if (UBKeyEquals(lower, @[@"x-uber-device-os-build", @"os_version_build", @"osbuildversion"])) {
+static id UBRewriteValueForKey(id value, NSString *key) {
+    if (![key isKindOfClass:NSString.class]) return value;
+    NSString *k = UBNormalizedKey(key);
+    BOOL numeric = [value isKindOfClass:NSNumber.class];
+    if (![value isKindOfClass:NSString.class] && !numeric) return value;
+    NSString *v = numeric ? [value stringValue] : value;
+    if ([@[@"deviceosversion", @"osversion", @"osfullversion", @"iosversion",
+           @"prevosversion", @"xuberalsdeviceosversion"] containsObject:k])
+        return numeric ? @17 : UBTargetOSVersion;
+    if ([k isEqualToString:@"osmajorversion"]) return numeric ? @17 : UBTargetOSMajor;
+    if ([@[@"xuberdeviceosbuild", @"osversionbuild", @"osbuildversion"] containsObject:k])
         return UBTargetOSBuild;
+    if ([@[@"deviceos", @"xuberdeviceos", @"xuberalsdeviceos", @"backenddeviceos"] containsObject:k]) {
+        NSRange digit = [v rangeOfCharacterFromSet:NSCharacterSet.decimalDigitCharacterSet];
+        // Preserve platform-only strings (e.g. iOS), and the original prefix.
+        if (digit.location == NSNotFound) return value;
+        NSString *prefix = [v substringToIndex:digit.location];
+        return numeric ? @17 : [prefix stringByAppendingString:UBTargetOSVersion];
     }
-
-    if (UBKeyEquals(lower, @[@"deviceos", @"device_os", @"x-uber-device-os", @"backend_device_os"])) {
-        if (!UBStringHasDigit(value)) return value;
-        if ([value.lowercaseString containsString:@"ios"]) return @"iOS 17.0";
-        return UBTargetOSVersion;
+    if ([@[@"xuberclientversion", @"xuberalsappversion", @"appversion",
+           @"clientversion", @"version", @"cfbundleversion", @"cfbundleshortversionstring"] containsObject:k]) {
+        if ([v isEqualToString:UBOldAppVersion]) return UBTargetAppVersion;
     }
-
-    if (UBKeyEquals(lower, @[
-        @"x-uber-client-version",
-        @"x-uber-als-app-version",
-        @"appversion",
-        @"app_version",
-        @"clientversion",
-        @"client_version"
-    ])) {
-        if ([value containsString:UBOldAppVersion]) {
-            return [value stringByReplacingOccurrencesOfString:UBOldAppVersion withString:UBTargetAppVersion];
-        }
-        if ([value isEqualToString:UBOldAppVersion]) return UBTargetAppVersion;
-    }
-
-    if ([lower isEqualToString:@"ubcontinuousversion"] || [lower isEqualToString:@"continuousversion"]) {
-        return UBTargetContinuousVersion;
-    }
-
+    if ([@[@"ubcontinuousversion", @"continuousversion"] containsObject:k] &&
+        [v isEqualToString:@"273504.1"]) return UBTargetContinuousVersion;
     return value;
 }
+
+static id UBRewriteJSON(id object, NSUInteger depth, NSUInteger *changes) {
+    if (depth > 64) return object;
+    if ([object isKindOfClass:NSDictionary.class]) {
+        NSMutableDictionary *copy = nil;
+        for (id key in object) {
+            id before = object[key];
+            id after = UBRewriteValueForKey(before, key);
+            if (![after isEqual:before]) (*changes)++;
+            after = UBRewriteJSON(after, depth + 1, changes);
+            if (after != before) {
+                if (!copy) copy = [object mutableCopy];
+                copy[key] = after;
+            }
+        }
+        return copy ?: object;
+    }
+    if ([object isKindOfClass:NSArray.class]) {
+        NSMutableArray *copy = nil;
+        for (NSUInteger i = 0; i < [object count]; i++) {
+            id before = object[i];
+            id after = UBRewriteJSON(before, depth + 1, changes);
+            if (after != before) {
+                if (!copy) copy = [object mutableCopy];
+                copy[i] = after;
+            }
+        }
+        return copy ?: object;
+    }
+    return object;
+}
+
+static BOOL UBIsUberURL(NSURL *url) {
+    NSString *host = url.host.lowercaseString;
+    return [host isEqualToString:@"uber.com"] || [host hasSuffix:@".uber.com"];
+}
+
+static NSData *UBRewriteBody(NSData *body) {
+    // Never decode compressed bodies, streams, protobuf or file uploads as text.
+    if (!body.length || body.length > 2 * 1024 * 1024) return body;
+    id json = [NSJSONSerialization JSONObjectWithData:body options:0 error:nil];
+    if (!json) return body;
+    NSUInteger changes = 0;
+    id updated = UBRewriteJSON(json, 0, &changes);
+    if (!changes) return body;
+    NSData *encoded = [NSJSONSerialization dataWithJSONObject:updated options:0 error:nil];
+    if (!encoded) return body;
+    UBDiagnostic([NSString stringWithFormat:@"request JSON compatibility fields changed: %lu", (unsigned long)changes]);
+    return encoded;
+}
+
+static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
+    if (!UBIsUberURL(request.URL)) return request;
+    NSMutableURLRequest *copy = [request mutableCopy];
+    BOOL changed = NO;
+    for (NSString *key in request.allHTTPHeaderFields) {
+        NSString *before = request.allHTTPHeaderFields[key];
+        id after = UBRewriteValueForKey(before, key);
+        if (![after isEqual:before]) { [copy setValue:after forHTTPHeaderField:key]; changed = YES; }
+    }
+    if (rewriteBody && !request.HTTPBodyStream &&
+        ![request valueForHTTPHeaderField:@"Content-Encoding"].length) {
+        NSData *before = request.HTTPBody;
+        NSData *after = UBRewriteBody(before);
+        if (after != before) {
+            copy.HTTPBody = after;
+            [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
+            changed = YES;
+        }
+    }
+    UBDiagnostic(changed ? @"Uber NSURLSession request updated" : @"Uber NSURLSession request observed (no rewrite needed)");
+    return changed ? copy : request;
+}
+
+%hook NSJSONSerialization
++ (NSData *)dataWithJSONObject:(id)object options:(NSJSONWritingOptions)options error:(NSError **)error {
+    NSUInteger changes = 0;
+    id updated = UBRewriteJSON(object, 0, &changes);
+    if (changes) UBDiagnostic([NSString stringWithFormat:@"JSON serializer compatibility fields changed: %lu", (unsigned long)changes]);
+    return %orig(updated, options, error);
+}
+%end
+
+%hook NSURLSession
+- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request {
+    return %orig(UBRewriteRequest(request, YES));
+}
+- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))handler {
+    return %orig(UBRewriteRequest(request, YES), handler);
+}
+- (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromData:(NSData *)body {
+    NSData *updated = UBIsUberURL(request.URL) && ![request valueForHTTPHeaderField:@"Content-Encoding"].length ? UBRewriteBody(body) : body;
+    NSMutableURLRequest *copy = [UBRewriteRequest(request, NO) mutableCopy];
+    if (updated != body) [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
+    return %orig(copy, updated);
+}
+- (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromData:(NSData *)body completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))handler {
+    NSData *updated = UBIsUberURL(request.URL) && ![request valueForHTTPHeaderField:@"Content-Encoding"].length ? UBRewriteBody(body) : body;
+    NSMutableURLRequest *copy = [UBRewriteRequest(request, NO) mutableCopy];
+    if (updated != body) [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
+    return %orig(copy, updated, handler);
+}
+%end
 
 %hook UIDevice
 - (NSString *)systemVersion {
@@ -125,30 +212,24 @@ static NSString *UBRewriteValueForKey(NSString *value, NSString *key) {
 %end
 
 %hook NSMutableURLRequest
+- (void)setHTTPBody:(NSData *)body {
+    NSData *updated = UBIsUberURL(self.URL) && ![self valueForHTTPHeaderField:@"Content-Encoding"].length ? UBRewriteBody(body) : body;
+    %orig(updated);
+    if (updated != body) [self setValue:nil forHTTPHeaderField:@"Content-Length"];
+}
+
+- (void)setAllHTTPHeaderFields:(NSDictionary *)headers {
+    NSMutableDictionary *updated = [headers mutableCopy];
+    for (NSString *key in headers) updated[key] = UBRewriteValueForKey(headers[key], key);
+    %orig(updated);
+}
+
 - (void)setValue:(NSString *)value forHTTPHeaderField:(NSString *)field {
     %orig(UBRewriteValueForKey(value, field), field);
 }
 
 - (void)addValue:(NSString *)value forHTTPHeaderField:(NSString *)field {
     %orig(UBRewriteValueForKey(value, field), field);
-}
-%end
-
-%hook NSMutableDictionary
-- (void)setObject:(id)object forKey:(id<NSCopying>)key {
-    id rewritten = object;
-    if ([object isKindOfClass:NSString.class] && [(id)key isKindOfClass:NSString.class]) {
-        rewritten = UBRewriteValueForKey((NSString *)object, (NSString *)key);
-    }
-    %orig(rewritten, key);
-}
-
-- (void)setObject:(id)object forKeyedSubscript:(id<NSCopying>)key {
-    id rewritten = object;
-    if ([object isKindOfClass:NSString.class] && [(id)key isKindOfClass:NSString.class]) {
-        rewritten = UBRewriteValueForKey((NSString *)object, (NSString *)key);
-    }
-    %orig(rewritten, key);
 }
 %end
 
@@ -204,39 +285,6 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
     return UBOrigSysctlByName(name, oldp, oldlenp, newp, newlen);
 }
 
-static void (*UBOrigDictMSetObject)(id, SEL, id, id) = NULL;
-static void UBDictMSetObject(id self, SEL _cmd, id object, id key) {
-    id rewritten = object;
-    if ([object isKindOfClass:NSString.class] && [key isKindOfClass:NSString.class]) {
-        rewritten = UBRewriteValueForKey((NSString *)object, (NSString *)key);
-    }
-    UBOrigDictMSetObject(self, _cmd, rewritten, key);
-}
-
-static void (*UBOrigDictMSetSubscript)(id, SEL, id, id) = NULL;
-static void UBDictMSetSubscript(id self, SEL _cmd, id object, id key) {
-    id rewritten = object;
-    if ([object isKindOfClass:NSString.class] && [key isKindOfClass:NSString.class]) {
-        rewritten = UBRewriteValueForKey((NSString *)object, (NSString *)key);
-    }
-    UBOrigDictMSetSubscript(self, _cmd, rewritten, key);
-}
-
-static void UBHookMutableDictionaryConcreteClass(void) {
-    Class cls = NSClassFromString(@"__NSDictionaryM");
-    if (!cls) return;
-
-    Method setter = class_getInstanceMethod(cls, @selector(setObject:forKey:));
-    if (setter) {
-        MSHookMessageEx(cls, @selector(setObject:forKey:), (IMP)&UBDictMSetObject, (IMP *)&UBOrigDictMSetObject);
-    }
-
-    Method subscript = class_getInstanceMethod(cls, @selector(setObject:forKeyedSubscript:));
-    if (subscript) {
-        MSHookMessageEx(cls, @selector(setObject:forKeyedSubscript:), (IMP)&UBDictMSetSubscript, (IMP *)&UBOrigDictMSetSubscript);
-    }
-}
-
 %ctor {
     @autoreleasepool {
         if (![NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.ubercab.UberPartner"]) return;
@@ -249,7 +297,8 @@ static void UBHookMutableDictionaryConcreteClass(void) {
                        (void *)&UBHookSysctlByName,
                        (void **)&UBOrigSysctlByName);
 
-        UBHookMutableDictionaryConcreteClass();
+        [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
+        UBDiagnostic(@"UberDriverBypass 0.2.0 loaded; metadata-only diagnostics (no request contents)");
         %init;
     }
 }
