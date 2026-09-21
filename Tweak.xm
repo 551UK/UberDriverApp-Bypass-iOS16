@@ -39,9 +39,114 @@ static NSString *UBNormalizedKey(NSString *key) {
             stringByReplacingOccurrencesOfString:@"-" withString:@""];
 }
 
+static NSString *UBTargetVersionForEqualLength(NSString *actual) {
+    if (![actual isKindOfClass:NSString.class]) return nil;
+    if (actual.length == UBTargetOSVersion.length) return UBTargetOSVersion;
+    if (actual.length == UBTargetOSLongVersion.length) return UBTargetOSLongVersion;
+    return nil;
+}
+
+static NSData *UBReplaceEqualLengthBytes(NSData *input, NSString *from, NSString *to) {
+    if (!input.length || !from.length || !to.length) return input;
+    NSData *needle = [from dataUsingEncoding:NSUTF8StringEncoding];
+    NSData *replacement = [to dataUsingEncoding:NSUTF8StringEncoding];
+    if (!needle.length || needle.length != replacement.length || needle.length > input.length) return input;
+
+    NSMutableData *out = [input mutableCopy];
+    uint8_t *bytes = out.mutableBytes;
+    const uint8_t *findBytes = needle.bytes;
+    const uint8_t *replaceBytes = replacement.bytes;
+    NSUInteger total = out.length;
+    NSUInteger n = needle.length;
+
+    for (NSUInteger i = 0; i + n <= total; ) {
+        if (memcmp(bytes + i, findBytes, n) == 0) {
+            memcpy(bytes + i, replaceBytes, n);
+            i += n;
+        } else {
+            i++;
+        }
+    }
+    return out;
+}
+
+static NSData *UBRewriteOpaqueDeviceIdentityData(NSData *body) {
+    if (!body.length) return body;
+
+    NSData *out = body;
+    out = UBReplaceEqualLengthBytes(out, UBOldAppVersion, UBTargetAppVersion);
+    out = UBReplaceEqualLengthBytes(out, UBOldContinuousVersion, UBTargetContinuousVersion);
+
+    NSString *actualTarget = UBTargetVersionForEqualLength(UBActualOSVersion);
+    if (actualTarget.length) out = UBReplaceEqualLengthBytes(out, UBActualOSVersion, actualTarget);
+
+    for (NSString *version in @[@"16.0", @"16.1", @"16.2", @"16.3", @"16.4", @"16.5", @"16.6", @"16.7"]) {
+        out = UBReplaceEqualLengthBytes(out, version, UBTargetOSVersion);
+    }
+    for (NSString *version in @[@"16.0.0", @"16.1.0", @"16.2.0", @"16.3.0", @"16.3.1", @"16.4.0", @"16.5.0", @"16.6.0", @"16.7.0"]) {
+        out = UBReplaceEqualLengthBytes(out, version, UBTargetOSLongVersion);
+    }
+    return out;
+}
+
+static NSString *UBRewriteDeviceDataHeader(NSString *value) {
+    if (![value isKindOfClass:NSString.class] || !value.length) return value;
+
+    NSString *out = value;
+    out = [out stringByReplacingOccurrencesOfString:UBOldAppVersion withString:UBTargetAppVersion];
+    out = [out stringByReplacingOccurrencesOfString:UBOldContinuousVersion withString:UBTargetContinuousVersion];
+
+    NSString *actualTarget = UBTargetVersionForEqualLength(UBActualOSVersion);
+    if (actualTarget.length) {
+        out = [out stringByReplacingOccurrencesOfString:UBActualOSVersion withString:actualTarget];
+    }
+
+    for (NSString *version in @[@"16.0", @"16.1", @"16.2", @"16.3", @"16.4", @"16.5", @"16.6", @"16.7"]) {
+        out = [out stringByReplacingOccurrencesOfString:version withString:UBTargetOSVersion];
+    }
+    for (NSString *version in @[@"16.0.0", @"16.1.0", @"16.2.0", @"16.3.0", @"16.3.1", @"16.4.0", @"16.5.0", @"16.6.0", @"16.7.0"]) {
+        out = [out stringByReplacingOccurrencesOfString:version withString:UBTargetOSLongVersion];
+    }
+    if (![out isEqualToString:value]) {
+        UBDiagnostic(@"x-uber-device-data text rewritten");
+        return out;
+    }
+
+    BOOL urlSafe = [value containsString:@"-"] || [value containsString:@"_"];
+    BOOL hadPadding = [value hasSuffix:@"="];
+    NSString *normalized = [value stringByReplacingOccurrencesOfString:@"-" withString:@"+"];
+    normalized = [normalized stringByReplacingOccurrencesOfString:@"_" withString:@"/"];
+    NSUInteger remainder = normalized.length % 4;
+    if (remainder) {
+        normalized = [normalized stringByPaddingToLength:normalized.length + (4 - remainder)
+                                              withString:@"="
+                                         startingAtIndex:0];
+    }
+
+    NSData *decoded = [[NSData alloc] initWithBase64EncodedString:normalized
+                                                          options:NSDataBase64DecodingIgnoreUnknownCharacters];
+    if (!decoded.length) return value;
+    NSData *rewritten = UBRewriteOpaqueDeviceIdentityData(decoded);
+    if ([rewritten isEqualToData:decoded]) return value;
+
+    NSString *encoded = [rewritten base64EncodedStringWithOptions:0];
+    if (urlSafe) {
+        encoded = [encoded stringByReplacingOccurrencesOfString:@"+" withString:@"-"];
+        encoded = [encoded stringByReplacingOccurrencesOfString:@"/" withString:@"_"];
+    }
+    if (!hadPadding) {
+        encoded = [encoded stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"="]];
+    }
+    UBDiagnostic(@"x-uber-device-data base64 rewritten");
+    return encoded ?: value;
+}
+
 static id UBRewriteValueForKey(id value, NSString *key) {
     if (![key isKindOfClass:NSString.class]) return value;
     NSString *k = UBNormalizedKey(key);
+    if ([k isEqualToString:@"xuberdevicedata"] && [value isKindOfClass:NSString.class]) {
+        return UBRewriteDeviceDataHeader(value);
+    }
     BOOL numeric = [value isKindOfClass:NSNumber.class];
     if (![value isKindOfClass:NSString.class] && !numeric) return value;
     NSString *v = numeric ? [value stringValue] : value;
@@ -103,6 +208,19 @@ static BOOL UBIsUberURL(NSURL *url) {
     return [host isEqualToString:@"uber.com"] || [host hasSuffix:@".uber.com"];
 }
 
+static BOOL UBIsDeviceIdentityRequest(NSURLRequest *request) {
+    if (!request || !UBIsUberURL(request.URL)) return NO;
+    NSString *url = request.URL.absoluteString.lowercaseString ?: @"";
+    if ([url containsString:@"uberdevices"] ||
+        [url containsString:@"upsert-user-device"] ||
+        [url containsString:@"devices/upsert"] ||
+        [url containsString:@"device-info"] ||
+        [url containsString:@"device_info"]) {
+        return YES;
+    }
+    return [request valueForHTTPHeaderField:@"x-uber-device-data"].length > 0;
+}
+
 static NSData *UBRewriteBody(NSData *body) {
     // Never decode compressed bodies, streams, protobuf or file uploads as text.
     if (!body.length || body.length > 2 * 1024 * 1024) return body;
@@ -130,7 +248,11 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
         ![request valueForHTTPHeaderField:@"Content-Encoding"].length) {
         NSData *before = request.HTTPBody;
         NSData *after = UBRewriteBody(before);
-        if (after != before) {
+        if (after == before && UBIsDeviceIdentityRequest(request)) {
+            after = UBRewriteOpaqueDeviceIdentityData(before);
+            if (![after isEqualToData:before]) UBDiagnostic(@"opaque Uber device identity body rewritten");
+        }
+        if (after != before && ![after isEqualToData:before]) {
             copy.HTTPBody = after;
             [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
             changed = YES;
@@ -158,6 +280,10 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
 }
 - (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromData:(NSData *)body {
     NSData *updated = UBIsUberURL(request.URL) && ![request valueForHTTPHeaderField:@"Content-Encoding"].length ? UBRewriteBody(body) : body;
+    if (updated == body && UBIsDeviceIdentityRequest(request)) {
+        updated = UBRewriteOpaqueDeviceIdentityData(body);
+        if (![updated isEqualToData:body]) UBDiagnostic(@"opaque Uber upload identity body rewritten");
+    }
     NSMutableURLRequest *copy = [UBRewriteRequest(request, NO) mutableCopy];
     if (updated != body) [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
     return %orig(copy, updated);
@@ -179,6 +305,22 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
 %hook NSProcessInfo
 - (NSString *)operatingSystemVersionString {
     return @"Version 17.0 (Build 21A329)";
+}
+
+- (NSOperatingSystemVersion)operatingSystemVersion {
+    NSOperatingSystemVersion version;
+    version.majorVersion = 17;
+    version.minorVersion = 0;
+    version.patchVersion = 0;
+    return version;
+}
+
+- (BOOL)isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion)version {
+    if (version.majorVersion < 17) return YES;
+    if (version.majorVersion > 17) return NO;
+    if (version.minorVersion < 0) return YES;
+    if (version.minorVersion > 0) return NO;
+    return version.patchVersion <= 0;
 }
 %end
 
@@ -214,8 +356,12 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
 %hook NSMutableURLRequest
 - (void)setHTTPBody:(NSData *)body {
     NSData *updated = UBIsUberURL(self.URL) && ![self valueForHTTPHeaderField:@"Content-Encoding"].length ? UBRewriteBody(body) : body;
+    if (updated == body && UBIsDeviceIdentityRequest(self)) {
+        updated = UBRewriteOpaqueDeviceIdentityData(body);
+        if (![updated isEqualToData:body]) UBDiagnostic(@"opaque NSMutableURLRequest device body rewritten");
+    }
     %orig(updated);
-    if (updated != body) [self setValue:nil forHTTPHeaderField:@"Content-Length"];
+    if (updated != body && ![updated isEqualToData:body]) [self setValue:nil forHTTPHeaderField:@"Content-Length"];
 }
 
 - (void)setAllHTTPHeaderFields:(NSDictionary *)headers {
@@ -281,6 +427,9 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
         if (strcmp(name, "kern.osversion") == 0) {
             return UBCopySysctlString("21A329", oldp, oldlenp);
         }
+        if (strcmp(name, "kern.osrelease") == 0) {
+            return UBCopySysctlString("23.0.0", oldp, oldlenp);
+        }
     }
     return UBOrigSysctlByName(name, oldp, oldlenp, newp, newlen);
 }
@@ -288,6 +437,8 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
 %ctor {
     @autoreleasepool {
         if (![NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.ubercab.UberPartner"]) return;
+
+        UBActualOSVersion = UIDevice.currentDevice.systemVersion;
 
         MSHookFunction((void *)&CFBundleGetValueForInfoDictionaryKey,
                        (void *)&UBHookCFBundleGetValueForInfoDictionaryKey,
@@ -298,7 +449,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.2.0 loaded; metadata-only diagnostics (no request contents)");
+        UBDiagnostic(@"UberDriverBypass 0.2.1 loaded; device-data/grpc compatibility diagnostics (no request contents)");
         %init;
     }
 }
