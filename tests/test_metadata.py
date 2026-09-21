@@ -10,7 +10,7 @@ static void check(BOOL ok, NSString *name) {
     if (!ok) { NSLog(@"FAIL: %@", name); exit(1); }
 }
 int main(void) { @autoreleasepool {
-    NSDictionary *documents = @{@"required": @YES, @"status": @"blocked", @"reason": @"documents", @"version": @"2"};
+    UBActualOSVersion = @"16.2";\n    NSDictionary *documents = @{@"required": @YES, @"status": @"blocked", @"reason": @"documents", @"version": @"2"};
     NSDictionary *input = @{@"payload": @[@{@"deviceOSVersion": @"16.2", @"deviceOS": @"iOS 16.2", @"version": @"4.527.10000", @"osMajorVersion": @16}], @"documents": documents, @"token": @"secret-placeholder"};
     NSUInteger changes = 0;
     NSDictionary *output = UBRewriteJSON(input, 0, &changes);
@@ -29,6 +29,16 @@ int main(void) { @autoreleasepool {
     check([UBRewriteValueForKey(@"16.2", @"x-uber-als-device-os-version") isEqual:@"17.0"], @"Uber OS header");
     check([UBRewriteValueForKey(@"4.527.10000", @"unrelated") isEqual:@"4.527.10000"], @"not a blind string replacement");
     check(UBRewriteValueForKey(NSNull.null, @"deviceOSVersion") == NSNull.null, @"null preserved");
+    NSString *deviceHeader = @"{\"device_os_version\":\"16.2\",\"app_version\":\"4.527.10000\"}";
+    NSString *rewrittenHeader = UBRewriteValueForKey(deviceHeader, @"x-uber-device-data");
+    check([rewrittenHeader containsString:@"17.0"], @"x-uber-device-data OS rewrite");
+    check([rewrittenHeader containsString:@"4.584.10000"], @"x-uber-device-data app rewrite");
+    NSData *opaque = [@"xx16.2yy4.527.10000zz273504.1" dataUsingEncoding:NSUTF8StringEncoding];
+    NSData *opaqueOut = UBRewriteOpaqueDeviceIdentityData(opaque);
+    NSString *opaqueString = [[NSString alloc] initWithData:opaqueOut encoding:NSUTF8StringEncoding];
+    check([opaqueString containsString:@"17.0"], @"opaque device payload OS rewrite");
+    check([opaqueString containsString:@"4.584.10000"], @"opaque device payload app rewrite");
+    check([opaqueString containsString:@"326106.1"], @"opaque device payload continuous version rewrite");
     NSLog(@"Metadata regression tests passed");
 } return 0; }
 '''
