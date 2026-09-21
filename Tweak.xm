@@ -6,6 +6,7 @@
 #import <sys/sysctl.h>
 #import <errno.h>
 #import <string.h>
+#import <stdlib.h>
 
 static NSString * const UBTargetOSVersion = @"17.0";
 static NSString * const UBTargetOSLongVersion = @"17.0.0";
