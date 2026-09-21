@@ -16,6 +16,7 @@ static NSString * const UBOldAppVersion = @"4.527.10000";
 static NSString * const UBTargetAppVersion = @"4.584.10000";
 static NSString * const UBOldContinuousVersion = @"273504.1";
 static NSString * const UBTargetContinuousVersion = @"326106.1";
+static NSString * const UBTargetBuildUUID = @"7a058960-ab07-11f1-8af6-ebef13f4ae76";
 static NSString *UBActualOSVersion = nil;
 
 static BOOL UBIsMainBundle(NSBundle *bundle) {
@@ -308,6 +309,109 @@ static id UBFilterForceUpgradeOnlineBlockers(id object, NSUInteger depth, NSUInt
     return object;
 }
 
+
+typedef id (*UBObjectGetterIMP)(id, SEL);
+static UBObjectGetterIMP UBOrigDriverChecksIssues = NULL;
+static UBObjectGetterIMP UBOrigDriverChecksFutureBlockers = NULL;
+
+static NSString *UBSafeObjectStringGetter(id object, NSString *selectorName) {
+    if (!object || !selectorName.length) return nil;
+    SEL selector = NSSelectorFromString(selectorName);
+    if (![object respondsToSelector:selector]) return nil;
+    id value = ((id(*)(id,SEL))objc_msgSend)(object, selector);
+    return [value isKindOfClass:NSString.class] ? value : nil;
+}
+
+static BOOL UBIsForceUpgradeIssueObject(id issue) {
+    if (!issue) return NO;
+
+    NSString *className = NSStringFromClass([issue class]);
+    if ([className.lowercaseString containsString:@"forceupgrade"]) return YES;
+
+    for (NSString *selectorName in @[@"typeString", @"subtypeString", @"issueType", @"type", @"subtype"]) {
+        NSString *value = UBSafeObjectStringGetter(issue, selectorName);
+        NSString *normalized = UBForceUpgradeNormalizedString(value);
+        if ([normalized containsString:@"forceupgrade"] ||
+            [normalized containsString:@"forceappupgrade"] ||
+            [normalized isEqualToString:@"appupgrade"] ||
+            [normalized isEqualToString:@"upgradeapp"]) {
+            return YES;
+        }
+    }
+
+    return NO;
+}
+
+static id UBFilterForceUpgradeIssueObjects(id value, NSString *source) {
+    if (![value isKindOfClass:NSArray.class]) return value;
+
+    NSArray *array = (NSArray *)value;
+    NSMutableArray *filtered = [NSMutableArray arrayWithCapacity:array.count];
+    NSUInteger removed = 0;
+
+    for (id item in array) {
+        if (UBIsForceUpgradeIssueObject(item)) {
+            removed++;
+            continue;
+        }
+        [filtered addObject:item];
+    }
+
+    if (removed) {
+        UBDiagnostic([NSString stringWithFormat:@"%@ removed force-app-upgrade issue objects: %lu",
+                      source, (unsigned long)removed]);
+        return filtered;
+    }
+    return value;
+}
+
+static id UBDriverChecksIssuesHook(id self, SEL _cmd) {
+    id original = UBOrigDriverChecksIssues ? UBOrigDriverChecksIssues(self, _cmd) : nil;
+    return UBFilterForceUpgradeIssueObjects(original, @"DriverChecksErrorData.issues");
+}
+
+static id UBDriverChecksFutureBlockersHook(id self, SEL _cmd) {
+    id original = UBOrigDriverChecksFutureBlockers ? UBOrigDriverChecksFutureBlockers(self, _cmd) : nil;
+    return UBFilterForceUpgradeIssueObjects(original, @"DriverChecksErrorData.futureBlockers");
+}
+
+static BOOL UBInstallExactGetterHook(Class cls,
+                                     NSString *selectorName,
+                                     IMP replacement,
+                                     IMP *originalOut) {
+    if (!cls || !selectorName.length || !replacement || !originalOut) return NO;
+    SEL selector = NSSelectorFromString(selectorName);
+    Method method = class_getInstanceMethod(cls, selector);
+    if (!method) return NO;
+
+    char returnType[16] = {0};
+    method_getReturnType(method, returnType, sizeof(returnType));
+    if (returnType[0] != '@') return NO;
+
+    MSHookMessageEx(cls, selector, replacement, originalOut);
+    return *originalOut != NULL;
+}
+
+static void UBInstallDriverChecksModelHooks(void) {
+    Class cls = objc_getClass("_TtC14RealtimeDriver21DriverChecksErrorData");
+    if (!cls) {
+        UBDiagnostic(@"DriverChecksErrorData class not available yet");
+        return;
+    }
+
+    BOOL issues = UBInstallExactGetterHook(cls,
+                                          @"issues",
+                                          (IMP)UBDriverChecksIssuesHook,
+                                          (IMP *)&UBOrigDriverChecksIssues);
+    BOOL future = UBInstallExactGetterHook(cls,
+                                          @"futureBlockers",
+                                          (IMP)UBDriverChecksFutureBlockersHook,
+                                          (IMP *)&UBOrigDriverChecksFutureBlockers);
+
+    UBDiagnostic([NSString stringWithFormat:@"DriverChecks exact hooks installed issues=%d futureBlockers=%d",
+                  issues, future]);
+}
+
 static BOOL UBIsUberURL(NSURL *url) {
     NSString *host = url.host.lowercaseString;
     return [host isEqualToString:@"uber.com"] || [host hasSuffix:@".uber.com"];
@@ -467,8 +571,23 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
         if ([key isEqualToString:@"UBContinuousVersion"]) {
             return UBTargetContinuousVersion;
         }
+        if ([key isEqualToString:@"UBBuildUUID"]) {
+            return UBTargetBuildUUID;
+        }
     }
     return %orig;
+}
+
+- (NSDictionary *)localizedInfoDictionary {
+    NSDictionary *original = %orig;
+    if (!UBIsMainBundle(self)) return original;
+    NSMutableDictionary *copy = original ? [original mutableCopy] : [NSMutableDictionary dictionary];
+    copy[@"CFBundleShortVersionString"] = UBTargetAppVersion;
+    copy[@"CFBundleVersion"] = UBTargetAppVersion;
+    copy[@"MinimumOSVersion"] = UBTargetOSVersion;
+    copy[@"UBContinuousVersion"] = UBTargetContinuousVersion;
+    copy[@"UBBuildUUID"] = UBTargetBuildUUID;
+    return copy;
 }
 
 - (NSDictionary *)infoDictionary {
@@ -480,6 +599,7 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
     copy[@"CFBundleVersion"] = UBTargetAppVersion;
     copy[@"MinimumOSVersion"] = UBTargetOSVersion;
     copy[@"UBContinuousVersion"] = UBTargetContinuousVersion;
+    copy[@"UBBuildUUID"] = UBTargetBuildUUID;
     return copy;
 }
 %end
@@ -521,6 +641,9 @@ static CFTypeRef UBHookCFBundleGetValueForInfoDictionaryKey(CFBundleRef bundle, 
         }
         if (CFEqual(key, CFSTR("UBContinuousVersion"))) {
             return CFSTR("326106.1");
+        }
+        if (CFEqual(key, CFSTR("UBBuildUUID"))) {
+            return CFSTR("7a058960-ab07-11f1-8af6-ebef13f4ae76");
         }
     }
     return UBOrigCFBundleGetValueForInfoDictionaryKey(bundle, key);
@@ -580,7 +703,14 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.3.1 loaded; Go Online blocker filter active; unsafe runtime method scan removed");
+        UBDiagnostic(@"UberDriverBypass 0.4.0 loaded; app-version Go Online blocker targeting active");
         %init;
+        UBInstallDriverChecksModelHooks();
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            if (!UBOrigDriverChecksIssues && !UBOrigDriverChecksFutureBlockers) {
+                UBInstallDriverChecksModelHooks();
+            }
+        });
     }
 }
