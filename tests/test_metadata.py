@@ -45,6 +45,6 @@ int main(void) { @autoreleasepool {
 with tempfile.TemporaryDirectory() as temp:
     src = Path(temp) / 'metadata.m'
     binary = Path(temp) / 'metadata'
-    src.write_text('#import <Foundation/Foundation.h>\n' + constants + functions + harness)
+    src.write_text('#import <Foundation/Foundation.h>\n#include <string.h>\nstatic void UBDiagnostic(NSString *event) { (void)event; }\n' + constants + functions + harness)
     subprocess.run(['xcrun', 'clang', '-fobjc-arc', '-framework', 'Foundation', str(src), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
