@@ -2,6 +2,7 @@
 #import <UIKit/UIKit.h>
 #import <CoreFoundation/CoreFoundation.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 #import <substrate.h>
 #import <sys/sysctl.h>
 #import <errno.h>
