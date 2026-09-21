@@ -80,11 +80,11 @@ static NSData *UBRewriteOpaqueDeviceIdentityData(NSData *body) {
     NSString *actualTarget = UBTargetVersionForEqualLength(UBActualOSVersion);
     if (actualTarget.length) out = UBReplaceEqualLengthBytes(out, UBActualOSVersion, actualTarget);
 
-    for (NSString *version in @[@"16.0", @"16.1", @"16.2", @"16.3", @"16.4", @"16.5", @"16.6", @"16.7"]) {
-        out = UBReplaceEqualLengthBytes(out, version, UBTargetOSVersion);
-    }
     for (NSString *version in @[@"16.0.0", @"16.1.0", @"16.2.0", @"16.3.0", @"16.3.1", @"16.4.0", @"16.5.0", @"16.6.0", @"16.7.0"]) {
         out = UBReplaceEqualLengthBytes(out, version, UBTargetOSLongVersion);
+    }
+    for (NSString *version in @[@"16.0", @"16.1", @"16.2", @"16.3", @"16.4", @"16.5", @"16.6", @"16.7"]) {
+        out = UBReplaceEqualLengthBytes(out, version, UBTargetOSVersion);
     }
     return out;
 }
@@ -101,11 +101,11 @@ static NSString *UBRewriteDeviceDataHeader(NSString *value) {
         out = [out stringByReplacingOccurrencesOfString:UBActualOSVersion withString:actualTarget];
     }
 
-    for (NSString *version in @[@"16.0", @"16.1", @"16.2", @"16.3", @"16.4", @"16.5", @"16.6", @"16.7"]) {
-        out = [out stringByReplacingOccurrencesOfString:version withString:UBTargetOSVersion];
-    }
     for (NSString *version in @[@"16.0.0", @"16.1.0", @"16.2.0", @"16.3.0", @"16.3.1", @"16.4.0", @"16.5.0", @"16.6.0", @"16.7.0"]) {
         out = [out stringByReplacingOccurrencesOfString:version withString:UBTargetOSLongVersion];
+    }
+    for (NSString *version in @[@"16.0", @"16.1", @"16.2", @"16.3", @"16.4", @"16.5", @"16.6", @"16.7"]) {
+        out = [out stringByReplacingOccurrencesOfString:version withString:UBTargetOSVersion];
     }
     if (![out isEqualToString:value]) {
         UBDiagnostic(@"x-uber-device-data text rewritten");
@@ -150,8 +150,9 @@ static id UBRewriteValueForKey(id value, NSString *key) {
     BOOL numeric = [value isKindOfClass:NSNumber.class];
     if (![value isKindOfClass:NSString.class] && !numeric) return value;
     NSString *v = numeric ? [value stringValue] : value;
-    if ([@[@"deviceosversion", @"osversion", @"osfullversion", @"iosversion",
-           @"prevosversion", @"xuberalsdeviceosversion"] containsObject:k])
+    if ([@[@"deviceosversion", @"deviceosversionstring", @"osversion", @"osfullversion", @"iosversion",
+           @"currentosversion", @"previousosversion", @"prevosversion", @"minimumosversion",
+           @"appminosversion", @"apptargetosversion", @"xuberalsdeviceosversion"] containsObject:k])
         return numeric ? @17 : UBTargetOSVersion;
     if ([k isEqualToString:@"osmajorversion"]) return numeric ? @17 : UBTargetOSMajor;
     if ([@[@"xuberdeviceosbuild", @"osversionbuild", @"osbuildversion"] containsObject:k])
@@ -285,13 +286,17 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
         if (![updated isEqualToData:body]) UBDiagnostic(@"opaque Uber upload identity body rewritten");
     }
     NSMutableURLRequest *copy = [UBRewriteRequest(request, NO) mutableCopy];
-    if (updated != body) [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
+    if (updated != body && ![updated isEqualToData:body]) [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
     return %orig(copy, updated);
 }
 - (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromData:(NSData *)body completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))handler {
     NSData *updated = UBIsUberURL(request.URL) && ![request valueForHTTPHeaderField:@"Content-Encoding"].length ? UBRewriteBody(body) : body;
+    if (updated == body && UBIsDeviceIdentityRequest(request)) {
+        updated = UBRewriteOpaqueDeviceIdentityData(body);
+        if (![updated isEqualToData:body]) UBDiagnostic(@"opaque Uber upload identity body rewritten");
+    }
     NSMutableURLRequest *copy = [UBRewriteRequest(request, NO) mutableCopy];
-    if (updated != body) [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
+    if (updated != body && ![updated isEqualToData:body]) [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
     return %orig(copy, updated, handler);
 }
 %end
