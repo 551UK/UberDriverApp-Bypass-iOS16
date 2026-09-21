@@ -10,7 +10,7 @@ constants = source[
 ]
 functions = source[
     source.index("static NSString *UBNormalizedKey"):
-    source.index("static BOOL UBIsUberURL")
+    source.index("static BOOL UBSelectorLooksLikeApplicabilityCheck")
 ]
 
 harness = r"""
