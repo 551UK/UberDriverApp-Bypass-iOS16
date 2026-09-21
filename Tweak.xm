@@ -56,9 +56,9 @@ static NSData *UBReplaceEqualLengthBytes(NSData *input, NSString *from, NSString
     if (!needle.length || needle.length != replacement.length || needle.length > input.length) return input;
 
     NSMutableData *out = [input mutableCopy];
-    uint8_t *bytes = out.mutableBytes;
-    const uint8_t *findBytes = needle.bytes;
-    const uint8_t *replaceBytes = replacement.bytes;
+    uint8_t *bytes = (uint8_t *)out.mutableBytes;
+    const uint8_t *findBytes = (const uint8_t *)needle.bytes;
+    const uint8_t *replaceBytes = (const uint8_t *)replacement.bytes;
     NSUInteger total = out.length;
     NSUInteger n = needle.length;
 
