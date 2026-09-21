@@ -1,44 +1,35 @@
 # UberDriverApp Bypass iOS 16
 
-Rootless compatibility candidate **0.5.0** for Uber Driver **4.527.10000** on **iOS 16.2+**.
+Rootless compatibility candidate **0.6.0** for Uber Driver **4.527.10000** on **iOS 16.2+**.
 
-## Why v0.5.0 is different
+## What the v0.5.0 log proved
 
-The current blocker has narrowed to:
+The v0.5.0 hook loaded and the native Cronet hook installed. However, the log also showed the attempted Objective-C hooks for `DriverChecksErrorData.issues` and `futureBlockers` both returned **0**, so that generated Swift model is not exposed through the Objective-C runtime in this build.
 
-**“Update your app to receive trip requests”**
+The old app's generated Go Online service has a direct `version` argument and a `DriverGoOnlineV2Request.deviceData` field. That means the app version can be inside the serialized Go Online payload rather than a standalone HTTP header.
 
-The older app ships **Cronet.framework**, and static inspection shows it exports the native C request API used to build request headers:
+## v0.6.0 changes
 
-- `Cronet_UrlRequestParams_request_headers_add`
-- `Cronet_HttpHeader_name_get`
-- `Cronet_HttpHeader_value_get`
-- `Cronet_HttpHeader_value_set`
-
-Previous builds mainly covered Foundation request paths such as `NSURLSession` / `NSMutableURLRequest`. A native Cronet request can bypass those hooks completely.
-
-## v0.5.0 changes
-
-- Hooks Cronet's **native C request-header boundary**.
-- Forces these Uber application-version headers to **4.584.10000** immediately before Cronet adds them to the native request:
-  - `x-uber-client-version`
-  - `x-uber-als-app-version`
-  - `x-uber-app-version`
-  - related Uber build/client-version keys
-- Broadens the existing Foundation rewrite so an old version embedded in a formatted header is replaced rather than requiring an exact-value match.
-- Keeps the working iOS **17.0 / 21A329** identity.
-- Keeps **UBContinuousVersion 326106.1** and the newer **UBBuildUUID**.
-- Keeps the targeted DriverChecks force-upgrade filtering from v0.4.0.
-- Does not remove document, identity, vehicle or safety Required Actions.
+- Hooks `Cronet_UrlRequest_InitWithParams`, not just header-add calls, so headers are inspected and rewritten at the **final native request boundary**.
+- Rewrites **any Cronet header value** containing:
+  - `4.527.10000` → `4.584.10000`
+  - `273504.1` → `326106.1`
+- Rewrites `x-uber-device-data` at that final boundary too.
+- Applies equal-length compatibility replacement to **opaque Uber request bodies**, not only device-registration bodies. This specifically covers serialized Thrift/protobuf-style Go Online payloads where the old version string may be embedded in `deviceData`.
+- Adds focused diagnostics for:
+  - `drivers/v2/go-online`
+  - `drivers/v2/fetch-online-blockers`
+- Removes the noisy “request observed” and repeated JSON-change log spam so the useful Go Online diagnostics are not exhausted immediately after launch.
+- Keeps the working iOS **17.0 / 21A329** spoof, newer app version, continuous version and UBBuildUUID.
 
 ## Test
 
-Install **v0.5.0**, respring, fully kill Uber Driver, reopen it and press **Go Online**.
+Install **v0.6.0**, respring, fully kill Uber Driver, reopen it and attempt **Go Online**.
 
-In `Documents/UberDriverBypass.log`, the most useful new lines are:
+Then send `Documents/UberDriverBypass.log`.
 
-- `native Cronet request-header hook installed`
-- `native Cronet app-version header forced to 4.584.10000`
-- `native Cronet app-version header already 4.584.10000`
+The most useful new line is:
 
-If the same blocker remains, that log tells us whether the live Go Online request actually passes through Cronet and whether the server was sent the newer app version at the final native boundary.
+`Cronet go-online final request headers inspected appVersionHeader=... deviceDataHeader=... rewrites=... uploadProvider=...`
+
+That tells us whether the actual Go Online request has its version in a header/device-data header or whether the request is carrying it in Cronet's upload body.
