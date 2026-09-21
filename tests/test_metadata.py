@@ -48,10 +48,10 @@ int main(void) {
         NSDictionary *payload = output[@"payload"][0];
 
         check(changes == 4, @"immutable nested request changes all four metadata values");
-        check([payload[@"deviceOSVersion"] isEqual:@"17.0"], @"deviceOSVersion");
-        check([payload[@"deviceOS"] isEqual:@"iOS 17.0"], @"deviceOS prefix");
+        check([payload[@"deviceOSVersion"] isEqual:@"18.0"], @"deviceOSVersion");
+        check([payload[@"deviceOS"] isEqual:@"iOS 18.0"], @"deviceOS prefix");
         check([payload[@"version"] isEqual:@"4.584.10000"], @"plain app version");
-        check([payload[@"osMajorVersion"] isEqual:@17], @"numeric type retained");
+        check([payload[@"osMajorVersion"] isEqual:@18], @"numeric type retained");
         check(output[@"documents"] == documents, @"documents object unchanged");
         check([output[@"token"] isEqual:input[@"token"]], @"unrelated fields unchanged");
         check([input[@"payload"][0][@"deviceOSVersion"] isEqual:@"16.2"], @"input not mutated");
@@ -59,7 +59,7 @@ int main(void) {
         changes = 0;
         check([UBRewriteJSON(output, 0, &changes) isEqual:output] && changes == 0, @"idempotent");
         check([UBRewriteValueForKey(@"iOS", @"deviceOS") isEqual:@"iOS"], @"platform-only value retained");
-        check([UBRewriteValueForKey(@"16.2", @"x-uber-als-device-os-version") isEqual:@"17.0"], @"Uber OS header");
+        check([UBRewriteValueForKey(@"16.2", @"x-uber-als-device-os-version") isEqual:@"18.0"], @"Uber OS header");
         check([UBRewriteValueForKey(@"4.527.10000", @"unrelated") isEqual:@"4.527.10000"], @"unrelated string");
         check(UBRewriteValueForKey(NSNull.null, @"deviceOSVersion") == NSNull.null, @"null preserved");
 
@@ -80,7 +80,7 @@ int main(void) {
         NSString *deviceHeader =
             @"{\\\"device_os_version\\\":\\\"16.2\\\",\\\"app_version\\\":\\\"4.527.10000\\\"}";
         NSString *rewrittenHeader = UBRewriteValueForKey(deviceHeader, @"x-uber-device-data");
-        check([rewrittenHeader containsString:@"17.0"], @"x-uber-device-data OS rewrite");
+        check([rewrittenHeader containsString:@"18.0"], @"x-uber-device-data OS rewrite");
         check([rewrittenHeader containsString:@"4.584.10000"], @"x-uber-device-data app rewrite");
 
         NSData *opaque =
@@ -89,7 +89,7 @@ int main(void) {
         NSString *opaqueString =
             [[NSString alloc] initWithData:opaqueOut encoding:NSUTF8StringEncoding];
 
-        check([opaqueString containsString:@"17.0"], @"opaque device payload OS rewrite");
+        check([opaqueString containsString:@"18.0"], @"opaque device payload OS rewrite");
         check([opaqueString containsString:@"4.584.10000"], @"opaque device payload app rewrite");
         check([opaqueString containsString:@"326106.1"], @"opaque continuous version rewrite");
 
