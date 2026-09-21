@@ -11,10 +11,10 @@
 #import <dlfcn.h>
 #import <strings.h>
 
-static NSString * const UBTargetOSVersion = @"17.0";
-static NSString * const UBTargetOSLongVersion = @"17.0.0";
-static NSString * const UBTargetOSMajor = @"17";
-static NSString * const UBTargetOSBuild = @"21A329";
+static NSString * const UBTargetOSVersion = @"18.0";
+static NSString * const UBTargetOSLongVersion = @"18.0.0";
+static NSString * const UBTargetOSMajor = @"18";
+static NSString * const UBTargetOSBuild = @"22A3354";
 static NSString * const UBOldAppVersion = @"4.527.10000";
 static NSString * const UBTargetAppVersion = @"4.584.10000";
 static NSString * const UBOldContinuousVersion = @"273504.1";
@@ -161,8 +161,8 @@ static id UBRewriteValueForKey(id value, NSString *key) {
     if ([@[@"deviceosversion", @"deviceosversionstring", @"osversion", @"osfullversion", @"iosversion",
            @"currentosversion", @"previousosversion", @"prevosversion", @"minimumosversion",
            @"appminosversion", @"apptargetosversion", @"xuberalsdeviceosversion"] containsObject:k])
-        return numeric ? @17 : UBTargetOSVersion;
-    if ([k isEqualToString:@"osmajorversion"]) return numeric ? @17 : UBTargetOSMajor;
+        return numeric ? @18 : UBTargetOSVersion;
+    if ([k isEqualToString:@"osmajorversion"]) return numeric ? @18 : UBTargetOSMajor;
     if ([@[@"xuberdeviceosbuild", @"osversionbuild", @"osbuildversion"] containsObject:k])
         return UBTargetOSBuild;
     if ([@[@"deviceos", @"xuberdeviceos", @"xuberalsdeviceos", @"backenddeviceos"] containsObject:k]) {
@@ -170,7 +170,7 @@ static id UBRewriteValueForKey(id value, NSString *key) {
         // Preserve platform-only strings (e.g. iOS), and the original prefix.
         if (digit.location == NSNotFound) return value;
         NSString *prefix = [v substringToIndex:digit.location];
-        return numeric ? @17 : [prefix stringByAppendingString:UBTargetOSVersion];
+        return numeric ? @18 : [prefix stringByAppendingString:UBTargetOSVersion];
     }
     if ([@[@"xuberclientversion", @"xuberalsappversion", @"xuberappversion",
            @"xuberbuildversion", @"xuberclientbuild", @"xuberclientbuildnumber",
@@ -566,20 +566,20 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
 
 %hook NSProcessInfo
 - (NSString *)operatingSystemVersionString {
-    return @"Version 17.0 (Build 21A329)";
+    return @"Version 18.0 (Build 22A3354)";
 }
 
 - (NSOperatingSystemVersion)operatingSystemVersion {
     NSOperatingSystemVersion version;
-    version.majorVersion = 17;
+    version.majorVersion = 18;
     version.minorVersion = 0;
     version.patchVersion = 0;
     return version;
 }
 
 - (BOOL)isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion)version {
-    if (version.majorVersion < 17) return YES;
-    if (version.majorVersion > 17) return NO;
+    if (version.majorVersion < 18) return YES;
+    if (version.majorVersion > 18) return NO;
     if (version.minorVersion < 0) return YES;
     if (version.minorVersion > 0) return NO;
     return version.patchVersion <= 0;
@@ -808,7 +808,7 @@ static CFTypeRef UBHookCFBundleGetValueForInfoDictionaryKey(CFBundleRef bundle, 
             return CFSTR("4.584.10000");
         }
         if (CFEqual(key, CFSTR("MinimumOSVersion"))) {
-            return CFSTR("17.0");
+            return CFSTR("18.0");
         }
         if (CFEqual(key, CFSTR("UBContinuousVersion"))) {
             return CFSTR("326106.1");
@@ -847,13 +847,13 @@ static int UBCopySysctlString(const char *spoof, void *oldp, size_t *oldlenp) {
 static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, const void *newp, size_t newlen) {
     if (name && !newp) {
         if (strcmp(name, "kern.osproductversion") == 0) {
-            return UBCopySysctlString("17.0", oldp, oldlenp);
+            return UBCopySysctlString("18.0", oldp, oldlenp);
         }
         if (strcmp(name, "kern.osversion") == 0) {
-            return UBCopySysctlString("21A329", oldp, oldlenp);
+            return UBCopySysctlString("22A3354", oldp, oldlenp);
         }
         if (strcmp(name, "kern.osrelease") == 0) {
-            return UBCopySysctlString("23.0.0", oldp, oldlenp);
+            return UBCopySysctlString("24.0.0", oldp, oldlenp);
         }
     }
     return UBOrigSysctlByName(name, oldp, oldlenp, newp, newlen);
@@ -874,7 +874,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.6.0 loaded; final Go Online request targeting active");
+        UBDiagnostic(@"UberDriverBypass 0.6.1 loaded; iOS 18.0 spoof + final Go Online request targeting active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();
