@@ -1,8 +1,8 @@
 # UberDriverApp Bypass iOS 16
 
-Rootless compatibility candidate **0.3.0** for Uber Driver **4.527.10000** on **iOS 16.2+** (Dopamine).
+Rootless compatibility candidate **0.3.1** for Uber Driver **4.527.10000** on **iOS 16.2+** (Dopamine).
 
-## What changed in 0.3.0
+## What changed in 0.3.1
 
 The force-update shown in testing is specifically a **Go Online / Required Actions blocker**, not an app-launch update screen. This build therefore targets the online-blocker path instead of treating it as a startup version check.
 
@@ -24,12 +24,11 @@ That matches the UI appearing only when the driver attempts to go online.
 - Recognizes `FORCE_UPGRADE`, `FORCE_APP_UPGRADE`, `APP_UPGRADE` and the old go-online version-error shape containing both `minVersionUrl` and `storeUrl`.
 - Preserves document, identity, vehicle, safety and other Required Actions.
 - Disables explicit `forceAppUpgrade` / `forceUpgrade` booleans when present in decoded online-blocker data.
-- Tries to disable Objective-C-visible applicability checks on Uber's `ForceUpgradeOnlineBlockerPluginFactory` and `ForceUpgradeBlockerAdapter` at runtime.
 - Keeps the existing iOS/app-version compatibility metadata rewrite as a fallback for the actual Go Online request.
 
 ## Test
 
-Install **v0.3.0**, respring, fully kill Uber Driver, reopen it and press **Go Online**.
+Install **v0.3.1**, respring, fully kill Uber Driver, reopen it and press **Go Online**.
 
 The log is at:
 
@@ -52,3 +51,7 @@ If the same blocker remains and none of the decoded-response lines appear, the l
 | UBContinuousVersion | 273504.1 | 326106.1 |
 
 Target: `com.ubercab.UberPartner`, process `Carbon`; arm64 + arm64e rootless.
+
+## 0.3.1 launch-crash fix
+
+v0.3.0 added a runtime scan that replaced Objective-C method implementations on Uber's force-upgrade classes. On the test device Uber Driver then opened and immediately closed. v0.3.1 removes that unsafe runtime method patch entirely. The targeted decoded blocker filtering and request metadata rewrites remain.
