@@ -41,7 +41,7 @@ jobs:
           test -n "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
           test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64"
-          test "$(dpkg-deb -f "$deb" Version)" = "0.5.0"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.6.0"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/uberdriver-check"
           dylib="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.dylib"
           filter="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.plist"
@@ -54,12 +54,12 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: ncipollo/release-action@v1
         with:
-          tag: v0.5.0
-          name: UberDriverApp Bypass iOS 16 v0.5.0
+          tag: v0.6.0
+          name: UberDriverApp Bypass iOS 16 v0.6.0
           body: |
-            Native Cronet Go Online app-version compatibility candidate for Uber Driver 4.527.10000.
+            Final Go Online request compatibility candidate for Uber Driver 4.527.10000.
 
-            The remaining blocker is now specifically app-version based. v0.5.0 hooks Cronet's exported C request-header API at the native request boundary and forces Uber app-version headers to 4.584.10000, covering requests that bypass NSURLSession/NSMutableURLRequest hooks. Existing OS identity, UBBuildUUID, continuous-version and DriverChecks filtering remain in place. Install v0.5.0, respring, fully kill Uber Driver, reopen it and press Go Online. Documents/UberDriverBypass.log records only hook/rewrite status.
+            The v0.5.0 log showed the Cronet hook installed, but the useful diagnostics were drowned out by launch-time logging and the DriverChecks Swift model was not Objective-C-hookable. v0.6.0 hooks Cronet_UrlRequest_InitWithParams at the final native request boundary, rewrites any header value containing the old app/continuous version, rewrites x-uber-device-data there, and applies equal-length compatibility replacement to opaque Uber request bodies including the Go Online / fetch-online-blockers paths. Logging is now focused on those paths. Install v0.6.0, respring, fully kill Uber Driver, reopen it, then attempt Go Online. Documents/UberDriverBypass.log records only compatibility-hook status and targeted request diagnostics.
           artifacts: packages/*.deb
           artifactErrorsFailBuild: true
           allowUpdates: true
