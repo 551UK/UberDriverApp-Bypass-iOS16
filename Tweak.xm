@@ -207,6 +207,182 @@ static id UBRewriteJSON(id object, NSUInteger depth, NSUInteger *changes) {
     return object;
 }
 
+
+static NSString *UBForceUpgradeNormalizedString(id value) {
+    if (![value isKindOfClass:NSString.class]) return nil;
+    NSString *s = [(NSString *)value lowercaseString];
+    NSCharacterSet *drop = [NSCharacterSet characterSetWithCharactersInString:@"_- .:/"];
+    return [[s componentsSeparatedByCharactersInSet:drop] componentsJoinedByString:@""];
+}
+
+static BOOL UBIsForceUpgradeMarker(id value) {
+    NSString *s = UBForceUpgradeNormalizedString(value);
+    if (!s.length) return NO;
+    return [s isEqualToString:@"forceupgrade"] ||
+           [s isEqualToString:@"forceappupgrade"] ||
+           [s isEqualToString:@"appupgrade"] ||
+           [s isEqualToString:@"upgradeapp"] ||
+           [s isEqualToString:@"minappversion"] ||
+           [s isEqualToString:@"minimumappversion"];
+}
+
+static BOOL UBIsForceUpgradeBlockerDictionary(NSDictionary *dictionary) {
+    if (![dictionary isKindOfClass:NSDictionary.class]) return NO;
+
+    for (NSString *key in @[
+        @"type", @"typeString", @"subtype", @"subtypeString",
+        @"issueType", @"issue_type", @"category", @"blockerType",
+        @"blocker_type", @"reason", @"name", @"code", @"actionType"
+    ]) {
+        id value = dictionary[key];
+        if (UBIsForceUpgradeMarker(value)) return YES;
+    }
+
+    // The old Uber Driver binary's DriverRequestError1Exception contains
+    // minVersionUrl/storeUrl for the go-online version rejection. Treat that
+    // shape as the upgrade blocker, but only when both pieces are present.
+    BOOL hasMinVersionURL =
+        dictionary[@"minVersionUrl"] != nil ||
+        dictionary[@"min_version_url"] != nil ||
+        dictionary[@"minimumVersionUrl"] != nil;
+    BOOL hasStoreURL =
+        dictionary[@"storeUrl"] != nil ||
+        dictionary[@"store_url"] != nil ||
+        dictionary[@"minVersionStoreUrl"] != nil;
+    if (hasMinVersionURL && hasStoreURL) return YES;
+
+    return NO;
+}
+
+static id UBFilterForceUpgradeOnlineBlockers(id object, NSUInteger depth, NSUInteger *removed) {
+    if (!object || depth > 64) return object;
+
+    if ([object isKindOfClass:NSArray.class]) {
+        NSArray *array = (NSArray *)object;
+        NSMutableArray *copy = [NSMutableArray arrayWithCapacity:array.count];
+        BOOL changed = NO;
+
+        for (id item in array) {
+            if ([item isKindOfClass:NSDictionary.class] &&
+                UBIsForceUpgradeBlockerDictionary((NSDictionary *)item)) {
+                if (removed) (*removed)++;
+                changed = YES;
+                continue;
+            }
+
+            id filtered = UBFilterForceUpgradeOnlineBlockers(item, depth + 1, removed);
+            [copy addObject:filtered ?: NSNull.null];
+            if (filtered != item) changed = YES;
+        }
+        return changed ? copy : object;
+    }
+
+    if ([object isKindOfClass:NSDictionary.class]) {
+        NSDictionary *dictionary = (NSDictionary *)object;
+        NSMutableDictionary *copy = nil;
+
+        for (id key in dictionary) {
+            id before = dictionary[key];
+            id after = UBFilterForceUpgradeOnlineBlockers(before, depth + 1, removed);
+            if (after != before) {
+                if (!copy) copy = [dictionary mutableCopy];
+                copy[key] = after ?: NSNull.null;
+            }
+        }
+
+        // Some responses expose the go-online gate as a boolean rather than
+        // an item in the blocker array. Flip only explicit force-upgrade keys.
+        for (NSString *key in @[@"forceAppUpgrade", @"force_app_upgrade", @"forceUpgrade", @"force_upgrade"]) {
+            id value = dictionary[key];
+            if ([value respondsToSelector:@selector(boolValue)] && [value boolValue]) {
+                if (!copy) copy = [dictionary mutableCopy];
+                copy[key] = @NO;
+                if (removed) (*removed)++;
+            }
+        }
+
+        return copy ?: object;
+    }
+
+    return object;
+}
+
+static BOOL UBSelectorLooksLikeApplicabilityCheck(SEL selector) {
+    NSString *name = NSStringFromSelector(selector).lowercaseString;
+    return [name containsString:@"applic"] ||
+           [name containsString:@"isenabled"] ||
+           [name containsString:@"enabledfor"] ||
+           [name containsString:@"canhandle"] ||
+           [name containsString:@"supports"] ||
+           [name containsString:@"shouldhandle"];
+}
+
+static BOOL UBForceUpgradeReturnNO(id self, SEL _cmd) {
+    (void)self; (void)_cmd;
+    return NO;
+}
+
+static void UBDisableForceUpgradeBooleanChecksOnClass(Class cls, NSString *label) {
+    if (!cls) return;
+
+    unsigned int count = 0;
+    Method *methods = class_copyMethodList(cls, &count);
+    NSUInteger hooked = 0;
+    for (unsigned int i = 0; i < count; i++) {
+        Method method = methods[i];
+        SEL selector = method_getName(method);
+        const char *encoding = method_getTypeEncoding(method);
+        if (!encoding || !UBSelectorLooksLikeApplicabilityCheck(selector)) continue;
+
+        char returnType[32] = {0};
+        method_getReturnType(method, returnType, sizeof(returnType));
+        if (returnType[0] == 'B' || returnType[0] == 'c') {
+            method_setImplementation(method, (IMP)UBForceUpgradeReturnNO);
+            hooked++;
+            UBDiagnostic([NSString stringWithFormat:@"%@ disabled %@", label, NSStringFromSelector(selector)]);
+        }
+    }
+    free(methods);
+
+    Class meta = object_getClass(cls);
+    count = 0;
+    methods = class_copyMethodList(meta, &count);
+    for (unsigned int i = 0; i < count; i++) {
+        Method method = methods[i];
+        SEL selector = method_getName(method);
+        const char *encoding = method_getTypeEncoding(method);
+        if (!encoding || !UBSelectorLooksLikeApplicabilityCheck(selector)) continue;
+
+        char returnType[32] = {0};
+        method_getReturnType(method, returnType, sizeof(returnType));
+        if (returnType[0] == 'B' || returnType[0] == 'c') {
+            method_setImplementation(method, (IMP)UBForceUpgradeReturnNO);
+            hooked++;
+            UBDiagnostic([NSString stringWithFormat:@"%@ class check disabled %@", label, NSStringFromSelector(selector)]);
+        }
+    }
+    free(methods);
+
+    UBDiagnostic([NSString stringWithFormat:@"%@ applicability hooks: %lu", label, (unsigned long)hooked]);
+}
+
+static void UBInstallForceUpgradeRuntimeHooks(void) {
+    int count = objc_getClassList(NULL, 0);
+    if (count <= 0) return;
+
+    Class *classes = (__unsafe_unretained Class *)calloc((size_t)count, sizeof(Class));
+    count = objc_getClassList(classes, count);
+    for (int i = 0; i < count; i++) {
+        Class cls = classes[i];
+        NSString *name = NSStringFromClass(cls);
+        if ([name containsString:@"ForceUpgradeOnlineBlockerPluginFactory"] ||
+            [name containsString:@"ForceUpgradeBlockerAdapter"]) {
+            UBDisableForceUpgradeBooleanChecksOnClass(cls, name);
+        }
+    }
+    free(classes);
+}
+
 static BOOL UBIsUberURL(NSURL *url) {
     NSString *host = url.host.lowercaseString;
     return [host isEqualToString:@"uber.com"] || [host hasSuffix:@".uber.com"];
@@ -272,6 +448,28 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
     id updated = UBRewriteJSON(object, 0, &changes);
     if (changes) UBDiagnostic([NSString stringWithFormat:@"JSON serializer compatibility fields changed: %lu", (unsigned long)changes]);
     return %orig(updated, options, error);
+}
+
++ (id)JSONObjectWithData:(NSData *)data options:(NSJSONReadingOptions)options error:(NSError **)error {
+    id result = %orig(data, options, error);
+    NSUInteger removed = 0;
+    id filtered = UBFilterForceUpgradeOnlineBlockers(result, 0, &removed);
+    if (removed) {
+        UBDiagnostic([NSString stringWithFormat:@"go-online force-upgrade blocker entries removed from decoded response: %lu",
+                      (unsigned long)removed]);
+    }
+    return filtered;
+}
+
++ (id)JSONObjectWithStream:(NSInputStream *)stream options:(NSJSONReadingOptions)options error:(NSError **)error {
+    id result = %orig(stream, options, error);
+    NSUInteger removed = 0;
+    id filtered = UBFilterForceUpgradeOnlineBlockers(result, 0, &removed);
+    if (removed) {
+        UBDiagnostic([NSString stringWithFormat:@"go-online force-upgrade blocker entries removed from streamed response: %lu",
+                      (unsigned long)removed]);
+    }
+    return filtered;
 }
 %end
 
@@ -457,7 +655,8 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.2.1 loaded; device-data/grpc compatibility diagnostics (no request contents)");
+        UBDiagnostic(@"UberDriverBypass 0.3.0 loaded; targeting Go Online force-upgrade blocker");
         %init;
+        UBInstallForceUpgradeRuntimeHooks();
     }
 }
