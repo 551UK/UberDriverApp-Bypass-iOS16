@@ -1,65 +1,44 @@
 # UberDriverApp Bypass iOS 16
 
-Rootless compatibility candidate **0.4.0** for Uber Driver **4.527.10000** on **iOS 16.2+** (Dopamine).
+Rootless compatibility candidate **0.5.0** for Uber Driver **4.527.10000** on **iOS 16.2+**.
 
-## Why this build is different
+## Why v0.5.0 is different
 
-The latest test changed from:
+The current blocker has narrowed to:
 
-- **“Update your device's iOS version”**
+**“Update your app to receive trip requests”**
 
-to:
+The older app ships **Cronet.framework**, and static inspection shows it exports the native C request API used to build request headers:
 
-- **“Update your app to receive trip requests”**
+- `Cronet_UrlRequestParams_request_headers_add`
+- `Cronet_HttpHeader_name_get`
+- `Cronet_HttpHeader_value_get`
+- `Cronet_HttpHeader_value_set`
 
-That is useful evidence: the iOS-version side of the Go Online compatibility check is now being accepted, while the remaining blocker is specifically the **app version**.
+Previous builds mainly covered Foundation request paths such as `NSURLSession` / `NSMutableURLRequest`. A native Cronet request can bypass those hooks completely.
 
-## v0.4.0 changes
+## v0.5.0 changes
 
-- Keeps the iOS 17.0 / 21A329 identity used by the working part of the previous build.
-- Presents app version **4.584.10000**, continuous version **326106.1**, and the newer **UBBuildUUID**.
-- Adds exact hooks for the old app's generated `RealtimeDriver.DriverChecksErrorData` model:
-  - `issues`
-  - `futureBlockers`
-- Filters only issue objects whose type/subtype identifies **FORCE_UPGRADE / FORCE_APP_UPGRADE / APP_UPGRADE**.
-- Leaves document, identity, vehicle, safety and unrelated Required Actions untouched.
-- Keeps the decoded JSON blocker filtering and request metadata rewriting from the earlier builds.
-- Does **not** use the unsafe runtime method scan that caused the v0.3.0 launch crash.
-
-## Why the DriverChecks hook matters
-
-The supplied 4.527.10000 binary contains all of these in the actual Go Online path:
-
-- `drivers/v2/go-online`
-- `drivers/v2/fetch-online-blockers`
-- `DriverGoOnlineV2Request`
-- `DriverChecksErrorData.issues`
-- `DriverChecksErrorData.futureBlockers`
-- `ForceUpgradeOnlineBlockerPluginFactory`
-- `ForceUpgradeBlockerAdapter`
-- `FORCE_UPGRADE` / `FORCE_APP_UPGRADE`
-
-The previous Foundation JSON filter can miss this because Uber's realtime path uses generated Swift/Thrift models. v0.4.0 now targets the generated issue model after it has been decoded.
+- Hooks Cronet's **native C request-header boundary**.
+- Forces these Uber application-version headers to **4.584.10000** immediately before Cronet adds them to the native request:
+  - `x-uber-client-version`
+  - `x-uber-als-app-version`
+  - `x-uber-app-version`
+  - related Uber build/client-version keys
+- Broadens the existing Foundation rewrite so an old version embedded in a formatted header is replaced rather than requiring an exact-value match.
+- Keeps the working iOS **17.0 / 21A329** identity.
+- Keeps **UBContinuousVersion 326106.1** and the newer **UBBuildUUID**.
+- Keeps the targeted DriverChecks force-upgrade filtering from v0.4.0.
+- Does not remove document, identity, vehicle or safety Required Actions.
 
 ## Test
 
-Install **v0.4.0**, respring, fully kill Uber Driver, reopen it, then press **Go Online**.
+Install **v0.5.0**, respring, fully kill Uber Driver, reopen it and press **Go Online**.
 
-Useful lines in `Documents/UberDriverBypass.log` include:
+In `Documents/UberDriverBypass.log`, the most useful new lines are:
 
-- `DriverChecks exact hooks installed issues=1 futureBlockers=1`
-- `DriverChecksErrorData.issues removed force-app-upgrade issue objects: 1`
-- `DriverChecksErrorData.futureBlockers removed force-app-upgrade issue objects: 1`
+- `native Cronet request-header hook installed`
+- `native Cronet app-version header forced to 4.584.10000`
+- `native Cronet app-version header already 4.584.10000`
 
-If the app-version Required Action still remains and the exact-hook line shows `issues=0 futureBlockers=0`, then those Swift accessors are not Objective-C-visible in this build and the next patch needs to target the generated realtime/Thrift decode path itself.
-
-## IPA comparison
-
-| Field | Old app | Comparison app |
-|---|---|---|
-| App version | 4.527.10000 | 4.584.10000 |
-| Minimum iOS | 16.2 | 17.0 |
-| UBContinuousVersion | 273504.1 | 326106.1 |
-| UBBuildUUID | 5ec85290-717e-11f0-b4e0-ad464ed114c6 | 7a058960-ab07-11f1-8af6-ebef13f4ae76 |
-
-Target: `com.ubercab.UberPartner`, process `Carbon`; arm64 + arm64e rootless.
+If the same blocker remains, that log tells us whether the live Go Online request actually passes through Cronet and whether the server was sent the newer app version at the final native boundary.
