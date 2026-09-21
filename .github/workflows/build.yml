@@ -41,7 +41,7 @@ jobs:
           test -n "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
           test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64"
-          test "$(dpkg-deb -f "$deb" Version)" = "0.6.0"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.6.1"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/uberdriver-check"
           dylib="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.dylib"
           filter="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.plist"
@@ -54,12 +54,12 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: ncipollo/release-action@v1
         with:
-          tag: v0.6.0
-          name: UberDriverApp Bypass iOS 16 v0.6.0
+          tag: v0.6.1
+          name: UberDriverApp Bypass iOS 16 v0.6.1
           body: |
-            Final Go Online request compatibility candidate for Uber Driver 4.527.10000.
+            iOS 18 spoof + final Go Online request compatibility candidate for Uber Driver 4.527.10000.
 
-            The v0.5.0 log showed the Cronet hook installed, but the useful diagnostics were drowned out by launch-time logging and the DriverChecks Swift model was not Objective-C-hookable. v0.6.0 hooks Cronet_UrlRequest_InitWithParams at the final native request boundary, rewrites any header value containing the old app/continuous version, rewrites x-uber-device-data there, and applies equal-length compatibility replacement to opaque Uber request bodies including the Go Online / fetch-online-blockers paths. Logging is now focused on those paths. Install v0.6.0, respring, fully kill Uber Driver, reopen it, then attempt Go Online. Documents/UberDriverBypass.log records only compatibility-hook status and targeted request diagnostics.
+            v0.6.1 changes every OS identity spoof from iOS 17 to iOS 18.0. It now reports iOS 18.0, build 22A3354 and Darwin 24.0.0 through UIDevice, NSProcessInfo, bundle metadata, JSON/request metadata, x-uber-device-data, opaque request-body replacement and sysctl paths. The final Cronet Go Online request hooks from v0.6.0 remain enabled. Install v0.6.1, respring, fully kill Uber Driver, reopen it, then attempt Go Online.
           artifacts: packages/*.deb
           artifactErrorsFailBuild: true
           allowUpdates: true
