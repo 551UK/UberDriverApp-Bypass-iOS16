@@ -31,7 +31,7 @@ static BOOL UBIsMainBundle(NSBundle *bundle) {
 static void UBDiagnostic(NSString *event) {
     static NSUInteger count = 0;
     @synchronized (UBTargetAppVersion) {
-        if (count++ >= 80) return;
+        if (count++ >= 200) return;
         NSString *path = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"];
         NSString *line = [NSString stringWithFormat:@"%@ %@\n", NSDate.date, event];
         NSFileHandle *file = [NSFileHandle fileHandleForWritingAtPath:path];
@@ -446,6 +446,19 @@ static BOOL UBIsDeviceIdentityRequest(NSURLRequest *request) {
     return [request valueForHTTPHeaderField:@"x-uber-device-data"].length > 0;
 }
 
+static BOOL UBIsGoOnlinePath(NSURL *url) {
+    NSString *path = url.path.lowercaseString ?: @"";
+    return [path containsString:@"drivers/v2/go-online"] ||
+           [path containsString:@"drivers/v2/fetch-online-blockers"];
+}
+
+static NSString *UBTargetPathLabel(NSURL *url) {
+    NSString *path = url.path.lowercaseString ?: @"";
+    if ([path containsString:@"drivers/v2/go-online"]) return @"go-online";
+    if ([path containsString:@"drivers/v2/fetch-online-blockers"]) return @"fetch-online-blockers";
+    return nil;
+}
+
 static NSData *UBRewriteBody(NSData *body) {
     // Never decode compressed bodies, streams, protobuf or file uploads as text.
     if (!body.length || body.length > 2 * 1024 * 1024) return body;
@@ -473,17 +486,23 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
         ![request valueForHTTPHeaderField:@"Content-Encoding"].length) {
         NSData *before = request.HTTPBody;
         NSData *after = UBRewriteBody(before);
-        if (after == before && UBIsDeviceIdentityRequest(request)) {
+        if (after == before && before.length) {
             after = UBRewriteOpaqueDeviceIdentityData(before);
-            if (![after isEqualToData:before]) UBDiagnostic(@"opaque Uber device identity body rewritten");
         }
         if (after != before && ![after isEqualToData:before]) {
             copy.HTTPBody = after;
             [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
             changed = YES;
+            NSString *label = UBTargetPathLabel(request.URL);
+            if (label.length) {
+                UBDiagnostic([NSString stringWithFormat:@"%@ Foundation request body compatibility bytes rewritten", label]);
+            }
         }
     }
-    UBDiagnostic(changed ? @"Uber NSURLSession request updated" : @"Uber NSURLSession request observed (no rewrite needed)");
+    if (changed) {
+        NSString *label = UBTargetPathLabel(request.URL);
+        if (label.length) UBDiagnostic([NSString stringWithFormat:@"%@ Foundation request updated", label]);
+    }
     return changed ? copy : request;
 }
 
@@ -491,7 +510,6 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
 + (NSData *)dataWithJSONObject:(id)object options:(NSJSONWritingOptions)options error:(NSError **)error {
     NSUInteger changes = 0;
     id updated = UBRewriteJSON(object, 0, &changes);
-    if (changes) UBDiagnostic([NSString stringWithFormat:@"JSON serializer compatibility fields changed: %lu", (unsigned long)changes]);
     return %orig(updated, options, error);
 }
 
@@ -527,9 +545,12 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
 }
 - (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromData:(NSData *)body {
     NSData *updated = UBIsUberURL(request.URL) && ![request valueForHTTPHeaderField:@"Content-Encoding"].length ? UBRewriteBody(body) : body;
-    if (updated == body && UBIsDeviceIdentityRequest(request)) {
+    if (UBIsUberURL(request.URL) && updated == body && body.length) {
         updated = UBRewriteOpaqueDeviceIdentityData(body);
-        if (![updated isEqualToData:body]) UBDiagnostic(@"opaque Uber upload identity body rewritten");
+        if (![updated isEqualToData:body] && UBIsGoOnlinePath(request.URL)) {
+            UBDiagnostic([NSString stringWithFormat:@"%@ NSURLSession upload body compatibility bytes rewritten",
+                          UBTargetPathLabel(request.URL)]);
+        }
     }
     NSMutableURLRequest *copy = [UBRewriteRequest(request, NO) mutableCopy];
     if (updated != body && ![updated isEqualToData:body]) [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
@@ -537,9 +558,12 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
 }
 - (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromData:(NSData *)body completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))handler {
     NSData *updated = UBIsUberURL(request.URL) && ![request valueForHTTPHeaderField:@"Content-Encoding"].length ? UBRewriteBody(body) : body;
-    if (updated == body && UBIsDeviceIdentityRequest(request)) {
+    if (UBIsUberURL(request.URL) && updated == body && body.length) {
         updated = UBRewriteOpaqueDeviceIdentityData(body);
-        if (![updated isEqualToData:body]) UBDiagnostic(@"opaque Uber upload identity body rewritten");
+        if (![updated isEqualToData:body] && UBIsGoOnlinePath(request.URL)) {
+            UBDiagnostic([NSString stringWithFormat:@"%@ NSURLSession upload body compatibility bytes rewritten",
+                          UBTargetPathLabel(request.URL)]);
+        }
     }
     NSMutableURLRequest *copy = [UBRewriteRequest(request, NO) mutableCopy];
     if (updated != body && ![updated isEqualToData:body]) [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
@@ -623,9 +647,12 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
 %hook NSMutableURLRequest
 - (void)setHTTPBody:(NSData *)body {
     NSData *updated = UBIsUberURL(self.URL) && ![self valueForHTTPHeaderField:@"Content-Encoding"].length ? UBRewriteBody(body) : body;
-    if (updated == body && UBIsDeviceIdentityRequest(self)) {
+    if (UBIsUberURL(self.URL) && updated == body && body.length) {
         updated = UBRewriteOpaqueDeviceIdentityData(body);
-        if (![updated isEqualToData:body]) UBDiagnostic(@"opaque NSMutableURLRequest device body rewritten");
+    }
+    if (updated != body && ![updated isEqualToData:body] && UBIsGoOnlinePath(self.URL)) {
+        UBDiagnostic([NSString stringWithFormat:@"%@ NSMutableURLRequest body compatibility bytes rewritten",
+                      UBTargetPathLabel(self.URL)]);
     }
     %orig(updated);
     if (updated != body && ![updated isEqualToData:body]) [self setValue:nil forHTTPHeaderField:@"Content-Length"];
@@ -650,11 +677,19 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
 typedef const char *(*UBCronetHeaderStringGetter)(void *);
 typedef void (*UBCronetHeaderStringSetter)(void *, const char *);
 typedef void (*UBCronetHeadersAddIMP)(void *, void *);
+typedef size_t (*UBCronetHeadersSizeIMP)(void *);
+typedef void *(*UBCronetHeadersAtIMP)(void *, size_t);
+typedef void *(*UBCronetUploadProviderGetIMP)(void *);
+typedef int (*UBCronetUrlRequestInitIMP)(void *, void *, const char *, void *, void *, void *);
 
 static UBCronetHeaderStringGetter UBCronetHeaderNameGet = NULL;
 static UBCronetHeaderStringGetter UBCronetHeaderValueGet = NULL;
 static UBCronetHeaderStringSetter UBCronetHeaderValueSet = NULL;
 static UBCronetHeadersAddIMP UBOrigCronetHeadersAdd = NULL;
+static UBCronetHeadersSizeIMP UBCronetHeadersSize = NULL;
+static UBCronetHeadersAtIMP UBCronetHeadersAt = NULL;
+static UBCronetUploadProviderGetIMP UBCronetUploadProviderGet = NULL;
+static UBCronetUrlRequestInitIMP UBOrigCronetUrlRequestInit = NULL;
 
 static BOOL UBCronetIsAppVersionHeader(const char *name) {
     if (!name) return NO;
@@ -666,23 +701,80 @@ static BOOL UBCronetIsAppVersionHeader(const char *name) {
            strcasecmp(name, "x-uber-client-build-number") == 0;
 }
 
+static BOOL UBCronetIsDeviceDataHeader(const char *name) {
+    return name && strcasecmp(name, "x-uber-device-data") == 0;
+}
+
+static BOOL UBCronetRewriteHeader(void *header, BOOL *sawAppVersion, BOOL *sawDeviceData) {
+    if (!header || !UBCronetHeaderNameGet || !UBCronetHeaderValueGet || !UBCronetHeaderValueSet) return NO;
+    const char *name = UBCronetHeaderNameGet(header);
+    const char *raw = UBCronetHeaderValueGet(header);
+    if (!name || !raw) return NO;
+
+    NSString *value = [NSString stringWithUTF8String:raw];
+    if (!value) return NO;
+    NSString *updated = value;
+
+    if (UBCronetIsAppVersionHeader(name)) {
+        if (sawAppVersion) *sawAppVersion = YES;
+        updated = UBTargetAppVersion;
+    } else {
+        updated = [updated stringByReplacingOccurrencesOfString:UBOldAppVersion
+                                                     withString:UBTargetAppVersion];
+        updated = [updated stringByReplacingOccurrencesOfString:UBOldContinuousVersion
+                                                     withString:UBTargetContinuousVersion];
+    }
+
+    if (UBCronetIsDeviceDataHeader(name)) {
+        if (sawDeviceData) *sawDeviceData = YES;
+        updated = UBRewriteDeviceDataHeader(updated);
+    }
+
+    if (![updated isEqualToString:value]) {
+        UBCronetHeaderValueSet(header, updated.UTF8String);
+        return YES;
+    }
+    return NO;
+}
+
 static void UBHookCronetHeadersAdd(void *params, void *header) {
-    if (header && UBCronetHeaderNameGet && UBCronetHeaderValueGet && UBCronetHeaderValueSet) {
-        const char *name = UBCronetHeaderNameGet(header);
-        if (UBCronetIsAppVersionHeader(name)) {
-            const char *before = UBCronetHeaderValueGet(header);
-            if (!before || strcmp(before, "4.584.10000") != 0) {
-                UBCronetHeaderValueSet(header, "4.584.10000");
-                UBDiagnostic(@"native Cronet app-version header forced to 4.584.10000");
-            } else {
-                UBDiagnostic(@"native Cronet app-version header already 4.584.10000");
-            }
+    BOOL sawApp = NO, sawDevice = NO;
+    if (UBCronetRewriteHeader(header, &sawApp, &sawDevice)) {
+        UBDiagnostic(@"native Cronet header compatibility value rewritten");
+    }
+    if (UBOrigCronetHeadersAdd) UBOrigCronetHeadersAdd(params, header);
+}
+
+static int UBHookCronetUrlRequestInit(void *request,
+                                      void *engine,
+                                      const char *url,
+                                      void *params,
+                                      void *callback,
+                                      void *executor) {
+    BOOL sawApp = NO;
+    BOOL sawDevice = NO;
+    NSUInteger rewrites = 0;
+
+    if (params && UBCronetHeadersSize && UBCronetHeadersAt) {
+        size_t count = UBCronetHeadersSize(params);
+        for (size_t i = 0; i < count; i++) {
+            void *header = UBCronetHeadersAt(params, i);
+            if (UBCronetRewriteHeader(header, &sawApp, &sawDevice)) rewrites++;
         }
     }
 
-    if (UBOrigCronetHeadersAdd) {
-        UBOrigCronetHeadersAdd(params, header);
+    NSString *urlString = url ? [NSString stringWithUTF8String:url] : nil;
+    NSURL *nsURL = urlString.length ? [NSURL URLWithString:urlString] : nil;
+    if (UBIsGoOnlinePath(nsURL)) {
+        BOOL hasUploadProvider = params && UBCronetUploadProviderGet && UBCronetUploadProviderGet(params) != NULL;
+        UBDiagnostic([NSString stringWithFormat:
+            @"Cronet %@ final request headers inspected appVersionHeader=%d deviceDataHeader=%d rewrites=%lu uploadProvider=%d",
+            UBTargetPathLabel(nsURL), sawApp, sawDevice, (unsigned long)rewrites, hasUploadProvider]);
     }
+
+    return UBOrigCronetUrlRequestInit
+        ? UBOrigCronetUrlRequestInit(request, engine, url, params, callback, executor)
+        : 0;
 }
 
 static void UBInstallNativeCronetHooks(void) {
@@ -690,28 +782,36 @@ static void UBInstallNativeCronetHooks(void) {
     NSString *path = [frameworks stringByAppendingPathComponent:@"Cronet.framework/Cronet"];
     void *handle = dlopen(path.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
     if (!handle) {
-        UBDiagnostic(@"Cronet.framework not loaded; native Cronet header hook unavailable");
+        UBDiagnostic(@"Cronet.framework not loaded; native Cronet hooks unavailable");
         return;
     }
 
     UBCronetHeaderNameGet = (UBCronetHeaderStringGetter)dlsym(handle, "Cronet_HttpHeader_name_get");
     UBCronetHeaderValueGet = (UBCronetHeaderStringGetter)dlsym(handle, "Cronet_HttpHeader_value_get");
     UBCronetHeaderValueSet = (UBCronetHeaderStringSetter)dlsym(handle, "Cronet_HttpHeader_value_set");
-    void *headersAdd = dlsym(handle, "Cronet_UrlRequestParams_request_headers_add");
+    UBCronetHeadersSize = (UBCronetHeadersSizeIMP)dlsym(handle, "Cronet_UrlRequestParams_request_headers_size");
+    UBCronetHeadersAt = (UBCronetHeadersAtIMP)dlsym(handle, "Cronet_UrlRequestParams_request_headers_at");
+    UBCronetUploadProviderGet = (UBCronetUploadProviderGetIMP)dlsym(handle, "Cronet_UrlRequestParams_upload_data_provider_get");
 
-    if (!UBCronetHeaderNameGet || !UBCronetHeaderValueGet ||
-        !UBCronetHeaderValueSet || !headersAdd) {
-        UBDiagnostic(@"Cronet native symbols missing; header hook not installed");
+    void *headersAdd = dlsym(handle, "Cronet_UrlRequestParams_request_headers_add");
+    void *requestInit = dlsym(handle, "Cronet_UrlRequest_InitWithParams");
+
+    if (!UBCronetHeaderNameGet || !UBCronetHeaderValueGet || !UBCronetHeaderValueSet ||
+        !UBCronetHeadersSize || !UBCronetHeadersAt || !headersAdd || !requestInit) {
+        UBDiagnostic(@"Cronet native symbols missing; final request hook not installed");
         return;
     }
 
     MSHookFunction(headersAdd,
                    (void *)&UBHookCronetHeadersAdd,
                    (void **)&UBOrigCronetHeadersAdd);
+    MSHookFunction(requestInit,
+                   (void *)&UBHookCronetUrlRequestInit,
+                   (void **)&UBOrigCronetUrlRequestInit);
 
-    UBDiagnostic(UBOrigCronetHeadersAdd
-        ? @"native Cronet request-header hook installed"
-        : @"native Cronet request-header hook failed");
+    UBDiagnostic((UBOrigCronetHeadersAdd && UBOrigCronetUrlRequestInit)
+        ? @"native Cronet add+final-request hooks installed"
+        : @"native Cronet hook installation incomplete");
 }
 
 static CFTypeRef (*UBOrigCFBundleGetValueForInfoDictionaryKey)(CFBundleRef bundle, CFStringRef key) = NULL;
@@ -787,7 +887,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.5.0 loaded; native Cronet app-version spoof active");
+        UBDiagnostic(@"UberDriverBypass 0.6.0 loaded; final Go Online request targeting active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();
