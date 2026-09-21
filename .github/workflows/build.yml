@@ -1,0 +1,75 @@
+name: Build UberDriverApp Bypass rootless
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: uberdriver-bypass-release
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Theos
+        uses: Randomblock1/theos-action@v1
+        with:
+          theos-sdks: https://github.com/theos/sdks
+          theos-sdks-branch: master
+
+      - name: Build rootless package
+        run: make clean package FINALPACKAGE=1
+
+      - name: Validate package
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install dpkg
+          deb="$(find packages -maxdepth 1 -name '*.deb' -print -quit)"
+          test -n "$deb"
+          test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
+          test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.1.0"
+          dpkg-deb -x "$deb" "$RUNNER_TEMP/uberdriver-check"
+          dylib="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.dylib"
+          filter="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.plist"
+          test -s "$dylib"
+          test -s "$filter"
+          xcrun lipo "$dylib" -verify_arch arm64 arm64e
+          plutil -lint "$filter"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: UberDriverApp-Bypass-iOS16-v0.1.0
+          path: packages/*.deb
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: v0.1.0
+          name: UberDriverApp Bypass iOS 16 v0.1.0
+          body: |
+            Initial rootless iOS 16 compatibility build.
+
+            Compared Uber Driver 4.527.10000 with 4.584.10000 and targets the version identity used by Uber's online compatibility checks:
+            - OS version 17.0
+            - OS build 21A329
+            - App version 4.584.10000
+            - Uber continuous version 326106.1
+
+            The Required Actions/document system itself is left intact.
+          artifacts: packages/*.deb
+          artifactErrorsFailBuild: true
+          allowUpdates: true
+          replacesArtifacts: true
+          makeLatest: true
