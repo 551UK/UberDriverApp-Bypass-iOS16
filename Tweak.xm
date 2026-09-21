@@ -433,19 +433,6 @@ static BOOL UBIsUberURL(NSURL *url) {
     return [host isEqualToString:@"uber.com"] || [host hasSuffix:@".uber.com"];
 }
 
-static BOOL UBIsDeviceIdentityRequest(NSURLRequest *request) {
-    if (!request || !UBIsUberURL(request.URL)) return NO;
-    NSString *url = request.URL.absoluteString.lowercaseString ?: @"";
-    if ([url containsString:@"uberdevices"] ||
-        [url containsString:@"upsert-user-device"] ||
-        [url containsString:@"devices/upsert"] ||
-        [url containsString:@"device-info"] ||
-        [url containsString:@"device_info"]) {
-        return YES;
-    }
-    return [request valueForHTTPHeaderField:@"x-uber-device-data"].length > 0;
-}
-
 static BOOL UBIsGoOnlinePath(NSURL *url) {
     NSString *path = url.path.lowercaseString ?: @"";
     return [path containsString:@"drivers/v2/go-online"] ||
