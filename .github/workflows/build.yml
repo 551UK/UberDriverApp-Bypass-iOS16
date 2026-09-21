@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: uberdriver-bypass-release
+  group: uberdriver-bypass-debug-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
