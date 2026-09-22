@@ -77,6 +77,32 @@ int main(void) {
         check([filteredBlockers[@"issues"][0][@"typeString"] isEqual:@"DOCUMENTS"], @"document blocker preserved");
         check([filteredBlockers[@"forceAppUpgrade"] isEqual:@NO], @"forceAppUpgrade disabled");
 
+        NSDictionary *nestedOnlineBlockers = @{
+            @"data": @{
+                @"issues": @[
+                    @{
+                        @"title": @"Update app",
+                        @"data": @{
+                            @"subtypeString": @"ForceUpgradeOnlineBlocker"
+                        }
+                    },
+                    @{
+                        @"title": @"Documents",
+                        @"data": @{
+                            @"subtypeString": @"DocumentsBlocker"
+                        }
+                    }
+                ]
+            }
+        };
+        removed = 0;
+        NSDictionary *nestedFiltered =
+            UBFilterForceUpgradeOnlineBlockers(nestedOnlineBlockers, 0, &removed);
+        NSArray *nestedIssues = nestedFiltered[@"data"][@"issues"];
+        check(removed == 1, @"nested ForceUpgrade issue removed");
+        check(nestedIssues.count == 1, @"nested unrelated issue retained");
+        check([nestedIssues[0][@"title"] isEqual:@"Documents"], @"nested document issue preserved");
+
         NSString *deviceHeader =
             @"{\\\"device_os_version\\\":\\\"16.2\\\",\\\"app_version\\\":\\\"4.527.10000\\\"}";
         NSString *rewrittenHeader = UBRewriteValueForKey(deviceHeader, @"x-uber-device-data");

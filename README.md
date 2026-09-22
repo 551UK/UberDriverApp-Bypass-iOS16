@@ -1,24 +1,22 @@
 # UberDriverApp Bypass iOS 16
 
-Rootless compatibility candidate **0.13.0** for Uber Driver **4.527.10000** on **iOS 16.2+**.
+Rootless compatibility candidate **0.14.0** for Uber Driver **4.527.10000** on **iOS 16.2+**.
 
-## What v0.12.0 proved
+## What v0.13.0 proved
 
-The real Go Online response is Foundation/NSURLSession JSON from:
-
-`/rt/drivers/v2/go-online`
-
-v0.12.0 found the exact ForceUpgrade marker at:
+The live Go Online response still reaches:
 
 `$.data.issues[0].data.subtypeString`
 
-The old filter did not remove it because it only recognized type/subtype fields on the issue dictionary itself.
+but v0.13.0 reports that the parent issue is not removable.
 
-## v0.13.0
+That means the nested subtype is a longer ForceUpgrade/min-version style identifier rather than one of the short exact marker strings previously accepted.
 
-v0.13.0 makes one targeted matcher change.
+## v0.14.0
 
-If an issue dictionary contains a nested `data` dictionary, it checks only:
+v0.14.0 keeps the filter scoped to the already-confirmed nested `issue.data` object.
+
+Within only these fields:
 
 - `typeString`
 - `subtypeString`
@@ -26,18 +24,26 @@ If an issue dictionary contains a nested `data` dictionary, it checks only:
 - `type`
 - `subtype`
 
-If one of those nested values is an explicit ForceUpgrade marker, the existing Foundation response filter removes that parent issue before Uber receives the JSON.
+the matcher now accepts either the existing exact ForceUpgrade marker or a normalized value containing:
 
-Other issue entries and required actions remain untouched.
+- `forceupgrade`
+- `forceappupgrade`
+- `minversion`
+
+The parent issue is then removed before Uber receives the Go Online JSON.
+
+Other issue entries and required actions remain unchanged.
+
+A regression test covers the nested live-response shape.
 
 ## Test
 
-Install **v0.13.0**, respring, fully kill Uber Driver, reopen it and press **Go Online once**.
+Install **v0.14.0**, respring, fully kill Uber Driver, reopen it and press **Go Online once**.
 
-If it still shows the update requirement, send:
-
-`Documents/UberDriverBypass.log`
-
-A successful match should produce:
+A successful match should log:
 
 `go-online Foundation response force-upgrade entries removed=`
+
+If the update requirement still appears, send:
+
+`Documents/UberDriverBypass.log`

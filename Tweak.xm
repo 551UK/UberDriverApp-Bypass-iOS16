@@ -278,7 +278,17 @@ static BOOL UBIsForceUpgradeBlockerDictionary(NSDictionary *dictionary) {
     if ([nestedData isKindOfClass:NSDictionary.class]) {
         NSDictionary *dataDictionary = (NSDictionary *)nestedData;
         for (NSString *key in @[@"typeString", @"subtypeString", @"issueType", @"type", @"subtype"]) {
-            if (UBIsForceUpgradeMarker(dataDictionary[key])) return YES;
+            id value = dataDictionary[key];
+            if (UBIsForceUpgradeMarker(value)) return YES;
+
+            // The live response can use a longer Swift/backend subtype such as
+            // a value containing "ForceUpgrade" rather than the exact token.
+            NSString *normalized = UBForceUpgradeNormalizedString(value);
+            if ([normalized containsString:@"forceupgrade"] ||
+                [normalized containsString:@"forceappupgrade"] ||
+                [normalized containsString:@"minversion"]) {
+                return YES;
+            }
         }
     }
 
@@ -1386,7 +1396,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.13.0 loaded; nested ForceUpgrade issue-data filtering active");
+        UBDiagnostic(@"UberDriverBypass 0.14.0 loaded; extended nested ForceUpgrade marker matching active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();
