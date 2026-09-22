@@ -667,6 +667,17 @@ typedef void (*UBCronetHeadersAddIMP)(void *, void *);
 typedef size_t (*UBCronetHeadersSizeIMP)(void *);
 typedef void *(*UBCronetHeadersAtIMP)(void *, size_t);
 typedef void *(*UBCronetUploadProviderGetIMP)(void *);
+typedef int64_t (*UBCronetUploadGetLengthFunc)(void *);
+typedef void (*UBCronetUploadReadFunc)(void *, void *, void *);
+typedef void (*UBCronetUploadRewindFunc)(void *, void *);
+typedef void (*UBCronetUploadCloseFunc)(void *);
+typedef void *(*UBCronetUploadProviderCreateWithIMP)(UBCronetUploadGetLengthFunc,
+                                                     UBCronetUploadReadFunc,
+                                                     UBCronetUploadRewindFunc,
+                                                     UBCronetUploadCloseFunc);
+typedef void (*UBCronetUploadSinkOnReadSucceededIMP)(void *, uint64_t, bool);
+typedef uint64_t (*UBCronetBufferGetSizeIMP)(void *);
+typedef void *(*UBCronetBufferGetDataIMP)(void *);
 typedef int (*UBCronetUrlRequestInitIMP)(void *, void *, const char *, void *, void *, void *);
 
 static UBCronetHeaderStringGetter UBCronetHeaderNameGet = NULL;
@@ -676,7 +687,106 @@ static UBCronetHeadersAddIMP UBOrigCronetHeadersAdd = NULL;
 static UBCronetHeadersSizeIMP UBCronetHeadersSize = NULL;
 static UBCronetHeadersAtIMP UBCronetHeadersAt = NULL;
 static UBCronetUploadProviderGetIMP UBCronetUploadProviderGet = NULL;
+static UBCronetUploadProviderCreateWithIMP UBOrigCronetUploadProviderCreateWith = NULL;
+static UBCronetUploadSinkOnReadSucceededIMP UBOrigCronetUploadSinkOnReadSucceeded = NULL;
+static UBCronetBufferGetSizeIMP UBCronetBufferGetSize = NULL;
+static UBCronetBufferGetDataIMP UBCronetBufferGetData = NULL;
 static UBCronetUrlRequestInitIMP UBOrigCronetUrlRequestInit = NULL;
+
+static NSMutableDictionary<NSValue *, NSValue *> *UBCronetProviderReadCallbacks = nil;
+static NSMutableDictionary<NSValue *, NSValue *> *UBCronetSinkBuffers = nil;
+static NSObject *UBCronetUploadLock = nil;
+
+static void UBEnsureCronetUploadState(void) {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        UBCronetProviderReadCallbacks = [NSMutableDictionary dictionary];
+        UBCronetSinkBuffers = [NSMutableDictionary dictionary];
+        UBCronetUploadLock = [NSObject new];
+    });
+}
+
+static UBCronetUploadReadFunc UBOriginalReadCallbackForProvider(void *provider) {
+    if (!provider) return NULL;
+    UBEnsureCronetUploadState();
+    @synchronized (UBCronetUploadLock) {
+        NSValue *value = UBCronetProviderReadCallbacks[[NSValue valueWithPointer:provider]];
+        return value ? (UBCronetUploadReadFunc)value.pointerValue : NULL;
+    }
+}
+
+static void UBRememberSinkBuffer(void *sink, void *buffer) {
+    if (!sink || !buffer) return;
+    UBEnsureCronetUploadState();
+    @synchronized (UBCronetUploadLock) {
+        UBCronetSinkBuffers[[NSValue valueWithPointer:sink]] = [NSValue valueWithPointer:buffer];
+    }
+}
+
+static void *UBBufferForSink(void *sink, BOOL remove) {
+    if (!sink) return NULL;
+    UBEnsureCronetUploadState();
+    @synchronized (UBCronetUploadLock) {
+        NSValue *key = [NSValue valueWithPointer:sink];
+        NSValue *value = UBCronetSinkBuffers[key];
+        if (remove) [UBCronetSinkBuffers removeObjectForKey:key];
+        return value.pointerValue;
+    }
+}
+
+static void UBHookCronetUploadReadCallback(void *provider, void *sink, void *buffer) {
+    UBRememberSinkBuffer(sink, buffer);
+    UBCronetUploadReadFunc original = UBOriginalReadCallbackForProvider(provider);
+    if (original) {
+        original(provider, sink, buffer);
+    }
+}
+
+static void *UBHookCronetUploadProviderCreateWith(UBCronetUploadGetLengthFunc getLength,
+                                                   UBCronetUploadReadFunc read,
+                                                   UBCronetUploadRewindFunc rewind,
+                                                   UBCronetUploadCloseFunc close) {
+    if (!UBOrigCronetUploadProviderCreateWith) return NULL;
+
+    UBEnsureCronetUploadState();
+    void *provider = UBOrigCronetUploadProviderCreateWith(getLength,
+                                                          read ? &UBHookCronetUploadReadCallback : NULL,
+                                                          rewind,
+                                                          close);
+    if (provider && read) {
+        @synchronized (UBCronetUploadLock) {
+            UBCronetProviderReadCallbacks[[NSValue valueWithPointer:provider]] =
+                [NSValue valueWithPointer:(void *)read];
+        }
+    }
+    return provider;
+}
+
+static void UBHookCronetUploadSinkOnReadSucceeded(void *sink,
+                                                   uint64_t bytesRead,
+                                                   bool finalChunk) {
+    void *buffer = UBBufferForSink(sink, YES);
+    if (buffer && bytesRead > 0 && UBCronetBufferGetSize && UBCronetBufferGetData) {
+        uint64_t capacity = UBCronetBufferGetSize(buffer);
+        uint64_t count = bytesRead < capacity ? bytesRead : capacity;
+        void *raw = UBCronetBufferGetData(buffer);
+
+        if (raw && count > 0 && count <= NSUIntegerMax) {
+            NSData *before = [NSData dataWithBytes:raw length:(NSUInteger)count];
+            NSData *after = UBRewriteOpaqueDeviceIdentityData(before);
+            if (after.length == before.length && ![after isEqualToData:before]) {
+                memcpy(raw, after.bytes, (size_t)after.length);
+                UBDiagnostic([NSString stringWithFormat:
+                    @"Cronet upload body compatibility bytes rewritten bytes=%llu final=%d",
+                    (unsigned long long)count, finalChunk ? 1 : 0]);
+            }
+        }
+    }
+
+    if (UBOrigCronetUploadSinkOnReadSucceeded) {
+        UBOrigCronetUploadSinkOnReadSucceeded(sink, bytesRead, finalChunk);
+    }
+}
 
 static BOOL UBCronetIsAppVersionHeader(const char *name) {
     if (!name) return NO;
@@ -779,9 +889,13 @@ static void UBInstallNativeCronetHooks(void) {
     UBCronetHeadersSize = (UBCronetHeadersSizeIMP)dlsym(handle, "Cronet_UrlRequestParams_request_headers_size");
     UBCronetHeadersAt = (UBCronetHeadersAtIMP)dlsym(handle, "Cronet_UrlRequestParams_request_headers_at");
     UBCronetUploadProviderGet = (UBCronetUploadProviderGetIMP)dlsym(handle, "Cronet_UrlRequestParams_upload_data_provider_get");
+    UBCronetBufferGetSize = (UBCronetBufferGetSizeIMP)dlsym(handle, "Cronet_Buffer_GetSize");
+    UBCronetBufferGetData = (UBCronetBufferGetDataIMP)dlsym(handle, "Cronet_Buffer_GetData");
 
     void *headersAdd = dlsym(handle, "Cronet_UrlRequestParams_request_headers_add");
     void *requestInit = dlsym(handle, "Cronet_UrlRequest_InitWithParams");
+    void *uploadProviderCreateWith = dlsym(handle, "Cronet_UploadDataProvider_CreateWith");
+    void *uploadSinkOnReadSucceeded = dlsym(handle, "Cronet_UploadDataSink_OnReadSucceeded");
 
     if (!UBCronetHeaderNameGet || !UBCronetHeaderValueGet || !UBCronetHeaderValueSet ||
         !UBCronetHeadersSize || !UBCronetHeadersAt || !headersAdd || !requestInit) {
@@ -796,9 +910,24 @@ static void UBInstallNativeCronetHooks(void) {
                    (void *)&UBHookCronetUrlRequestInit,
                    (void **)&UBOrigCronetUrlRequestInit);
 
-    UBDiagnostic((UBOrigCronetHeadersAdd && UBOrigCronetUrlRequestInit)
-        ? @"native Cronet add+final-request hooks installed"
-        : @"native Cronet hook installation incomplete");
+    if (uploadProviderCreateWith && uploadSinkOnReadSucceeded &&
+        UBCronetBufferGetSize && UBCronetBufferGetData) {
+        UBEnsureCronetUploadState();
+        MSHookFunction(uploadProviderCreateWith,
+                       (void *)&UBHookCronetUploadProviderCreateWith,
+                       (void **)&UBOrigCronetUploadProviderCreateWith);
+        MSHookFunction(uploadSinkOnReadSucceeded,
+                       (void *)&UBHookCronetUploadSinkOnReadSucceeded,
+                       (void **)&UBOrigCronetUploadSinkOnReadSucceeded);
+    }
+
+    if (UBOrigCronetHeadersAdd && UBOrigCronetUrlRequestInit) {
+        UBDiagnostic((UBOrigCronetUploadProviderCreateWith && UBOrigCronetUploadSinkOnReadSucceeded)
+            ? @"native Cronet add+final-request+upload-body hooks installed"
+            : @"native Cronet add+final-request hooks installed; upload-body hooks unavailable");
+    } else {
+        UBDiagnostic(@"native Cronet hook installation incomplete");
+    }
 }
 
 static CFTypeRef (*UBOrigCFBundleGetValueForInfoDictionaryKey)(CFBundleRef bundle, CFStringRef key) = NULL;
@@ -874,7 +1003,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.6.1 loaded; iOS 18.0 spoof + final Go Online request targeting active");
+        UBDiagnostic(@"UberDriverBypass 0.7.0 loaded; iOS 18.0 spoof + Cronet upload-body targeting active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();
