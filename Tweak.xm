@@ -428,6 +428,106 @@ static void UBInstallDriverChecksModelHooks(void) {
                   issues, future]);
 }
 
+
+static BOOL UBForceUpgradeReturnNO0(id self, SEL _cmd) {
+    (void)self;
+    UBDiagnostic([NSString stringWithFormat:@"local ForceUpgrade decision forced NO: %@", NSStringFromSelector(_cmd)]);
+    return NO;
+}
+
+static BOOL UBForceUpgradeReturnNO1(id self, SEL _cmd, id arg) {
+    (void)self;
+    (void)arg;
+    UBDiagnostic([NSString stringWithFormat:@"local ForceUpgrade decision forced NO: %@", NSStringFromSelector(_cmd)]);
+    return NO;
+}
+
+static BOOL UBForceUpgradeSelectorLooksLikeDecision(SEL selector) {
+    NSString *name = NSStringFromSelector(selector).lowercaseString;
+    return [name containsString:@"applic"] ||
+           [name containsString:@"eligible"] ||
+           [name containsString:@"enabled"] ||
+           [name containsString:@"handle"] ||
+           [name containsString:@"support"] ||
+           [name containsString:@"should"] ||
+           [name containsString:@"can"] ||
+           [name containsString:@"block"] ||
+           [name containsString:@"forceupgrade"];
+}
+
+static NSUInteger UBInspectAndDisableForceUpgradeMethodsOnClass(Class cls, NSString *label) {
+    if (!cls) {
+        UBDiagnostic([NSString stringWithFormat:@"%@ class unavailable", label]);
+        return 0;
+    }
+
+    NSUInteger hooked = 0;
+    unsigned int count = 0;
+    Method *methods = class_copyMethodList(cls, &count);
+
+    for (unsigned int i = 0; i < count; i++) {
+        Method method = methods[i];
+        SEL selector = method_getName(method);
+        const char *encoding = method_getTypeEncoding(method);
+        unsigned int argc = method_getNumberOfArguments(method);
+
+        UBDiagnostic([NSString stringWithFormat:@"%@ method %@ argc=%u encoding=%s",
+                      label, NSStringFromSelector(selector), argc, encoding ?: "?"]);
+
+        if (!UBForceUpgradeSelectorLooksLikeDecision(selector) || !encoding) continue;
+
+        char returnType[16] = {0};
+        method_getReturnType(method, returnType, sizeof(returnType));
+        if (returnType[0] != 'B' && returnType[0] != 'c') continue;
+
+        IMP replacement = NULL;
+        if (argc == 2) {
+            replacement = (IMP)UBForceUpgradeReturnNO0;
+        } else if (argc == 3) {
+            char argType[16] = {0};
+            method_getArgumentType(method, 2, argType, sizeof(argType));
+            if (argType[0] == '@' || argType[0] == '#') {
+                replacement = (IMP)UBForceUpgradeReturnNO1;
+            }
+        }
+
+        if (replacement) {
+            IMP original = NULL;
+            MSHookMessageEx(cls, selector, replacement, &original);
+            if (original) {
+                hooked++;
+                UBDiagnostic([NSString stringWithFormat:@"%@ hooked BOOL decision %@", label,
+                              NSStringFromSelector(selector)]);
+            }
+        }
+    }
+
+    free(methods);
+    return hooked;
+}
+
+static void UBInstallLocalForceUpgradeHooks(void) {
+    NSArray<NSString *> *classNames = @[
+        @"_TtC17DriverIntegration38ForceUpgradeOnlineBlockerPluginFactory",
+        @"_TtC17DriverIntegration26ForceUpgradeBlockerAdapter"
+    ];
+
+    NSUInteger total = 0;
+    for (NSString *className in classNames) {
+        Class cls = objc_getClass(className.UTF8String);
+        total += UBInspectAndDisableForceUpgradeMethodsOnClass(cls, className);
+
+        if (cls) {
+            Class meta = object_getClass(cls);
+            total += UBInspectAndDisableForceUpgradeMethodsOnClass(meta,
+                [className stringByAppendingString:@" +class"]);
+        }
+    }
+
+    UBDiagnostic([NSString stringWithFormat:@"local ForceUpgrade BOOL decision hooks installed=%lu",
+                  (unsigned long)total]);
+}
+
 static BOOL UBIsUberURL(NSURL *url) {
     NSString *host = url.host.lowercaseString;
     return [host isEqualToString:@"uber.com"] || [host hasSuffix:@".uber.com"];
@@ -1003,15 +1103,17 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.7.0 loaded; iOS 18.0 spoof + Cronet upload-body targeting active");
+        UBDiagnostic(@"UberDriverBypass 0.8.0 loaded; local ForceUpgrade blocker targeting active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();
+        UBInstallLocalForceUpgradeHooks();
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
             if (!UBOrigDriverChecksIssues && !UBOrigDriverChecksFutureBlockers) {
                 UBInstallDriverChecksModelHooks();
             }
+            UBInstallLocalForceUpgradeHooks();
         });
     }
 }
