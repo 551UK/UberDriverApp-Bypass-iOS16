@@ -507,6 +507,30 @@ static NSUInteger UBInspectAndDisableForceUpgradeMethodsOnClass(Class cls, NSStr
     return hooked;
 }
 
+static void UBDiagnoseForceUpgradeInheritance(Class cls, NSString *label) {
+    if (!cls) return;
+
+    NSUInteger depth = 0;
+    for (Class current = cls; current && depth < 5; current = class_getSuperclass(current), depth++) {
+        unsigned int count = 0;
+        Method *methods = class_copyMethodList(current, &count);
+        UBDiagnostic([NSString stringWithFormat:@"%@ hierarchy depth=%lu class=%@ ownMethods=%u",
+                      label, (unsigned long)depth, NSStringFromClass(current), count]);
+
+        for (unsigned int i = 0; i < count; i++) {
+            Method method = methods[i];
+            SEL selector = method_getName(method);
+            if (!UBForceUpgradeSelectorLooksLikeDecision(selector)) continue;
+
+            const char *encoding = method_getTypeEncoding(method);
+            UBDiagnostic([NSString stringWithFormat:@"%@ inherited-candidate %@ on %@ encoding=%s",
+                          label, NSStringFromSelector(selector), NSStringFromClass(current),
+                          encoding ?: "?"]);
+        }
+        free(methods);
+    }
+}
+
 static void UBInstallLocalForceUpgradeHooks(void) {
     NSArray<NSString *> *classNames = @[
         @"_TtC17DriverIntegration38ForceUpgradeOnlineBlockerPluginFactory",
@@ -516,6 +540,7 @@ static void UBInstallLocalForceUpgradeHooks(void) {
     NSUInteger total = 0;
     for (NSString *className in classNames) {
         Class cls = objc_getClass(className.UTF8String);
+        UBDiagnoseForceUpgradeInheritance(cls, className);
         total += UBInspectAndDisableForceUpgradeMethodsOnClass(cls, className);
 
         if (cls) {
@@ -986,6 +1011,18 @@ static int UBHookCronetUrlRequestInit(void *request,
 
     NSString *urlString = url ? [NSString stringWithUTF8String:url] : nil;
     NSURL *nsURL = urlString.length ? [NSURL URLWithString:urlString] : nil;
+
+    static NSUInteger requestPathLogCount = 0;
+    if (nsURL && requestPathLogCount < 80) {
+        @synchronized (UBTargetAppVersion) {
+            if (requestPathLogCount < 80) {
+                requestPathLogCount++;
+                UBDiagnostic([NSString stringWithFormat:@"Cronet request host=%@ path=%@",
+                              nsURL.host ?: @"", nsURL.path ?: @""]);
+            }
+        }
+    }
+
     if (UBIsGoOnlinePath(nsURL)) {
         UBRememberCronetRequestURL(request, nsURL);
         BOOL hasUploadProvider = params && UBCronetUploadProviderGet && UBCronetUploadProviderGet(params) != NULL;
@@ -1207,7 +1244,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.9.0 loaded; Cronet response ForceUpgrade filtering active");
+        UBDiagnostic(@"UberDriverBypass 0.10.0 loaded; request-path and ForceUpgrade inheritance diagnostics active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();
