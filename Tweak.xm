@@ -270,6 +270,18 @@ static BOOL UBIsForceUpgradeBlockerDictionary(NSDictionary *dictionary) {
         dictionary[@"minVersionStoreUrl"] != nil;
     if (hasMinVersionURL && hasStoreURL) return YES;
 
+    // v0.12.0 diagnostics showed the live /rt/drivers/v2/go-online response
+    // wraps the actual ForceUpgrade subtype under issue.data.subtypeString.
+    // Match only that exact nested issue-data shape so unrelated issue
+    // dictionaries remain untouched.
+    id nestedData = dictionary[@"data"];
+    if ([nestedData isKindOfClass:NSDictionary.class]) {
+        NSDictionary *dataDictionary = (NSDictionary *)nestedData;
+        for (NSString *key in @[@"typeString", @"subtypeString", @"issueType", @"type", @"subtype"]) {
+            if (UBIsForceUpgradeMarker(dataDictionary[key])) return YES;
+        }
+    }
+
     return NO;
 }
 
@@ -1374,7 +1386,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.12.0 loaded; direct Foundation Go Online response filtering active");
+        UBDiagnostic(@"UberDriverBypass 0.13.0 loaded; nested ForceUpgrade issue-data filtering active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();

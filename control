@@ -1,8 +1,8 @@
 Package: com.551.uberdriverbypass
 Name: UberDriverApp Bypass iOS 16
-Version: 0.12.0
+Version: 0.13.0
 Architecture: iphoneos-arm64
-Description: Direct Foundation Go Online ForceUpgrade response filter for Uber Driver 4.527.10000 on rootless iOS 16.
+Description: Nested ForceUpgrade issue-data response filter for Uber Driver 4.527.10000 on rootless iOS 16.
 Maintainer: 551UK
 Author: 551UK
 Section: Tweaks
