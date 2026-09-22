@@ -41,7 +41,7 @@ jobs:
           test -n "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
           test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64"
-          test "$(dpkg-deb -f "$deb" Version)" = "0.10.0"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.11.0"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/uberdriver-check"
           dylib="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.dylib"
           filter="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.plist"
@@ -54,14 +54,14 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: ncipollo/release-action@v1
         with:
-          tag: v0.10.0
-          name: UberDriverApp Bypass iOS 16 v0.10.0
+          tag: v0.11.0
+          name: UberDriverApp Bypass iOS 16 v0.11.0
           body: |
-            Diagnostic build for the remaining Go Online version gate in Uber Driver 4.527.10000.
+            Foundation transport diagnostic build for Uber Driver 4.527.10000.
 
-            The v0.9.0 device log proves the Cronet response hook installs, but it contains no Go Online request or response diagnostic and the exact local ForceUpgrade Objective-C hook count is still zero. v0.10.0 therefore adds diagnostics without broadening the bypass: it logs Cronet request host/path values (never query strings) so the actual Go Online endpoint can be identified, and it records the superclass chain plus only decision-like inherited Objective-C selectors for the two exact ForceUpgrade classes. Existing compatibility behavior remains unchanged.
+            The v0.10.0 device log shows the ForceUpgrade factory and adapter plus their Presidio superclass layers expose no Objective-C methods, so that hook path cannot reach the Swift-native blocker. It also produced no Cronet request path lines. v0.11.0 keeps the existing compatibility behavior and adds narrow NSURLSession diagnostics: Uber requests log only host and path, and the known go-online/fetch-online-blockers completion path logs response byte count, MIME type, error presence, and whether readable text contains an explicit ForceUpgrade/minVersion/storeUrl marker. Query strings, headers, tokens and response contents are not logged.
 
-            Install v0.10.0, respring, fully kill Uber Driver, reopen it, press Go Online once, then send Documents/UberDriverBypass.log.
+            Install v0.11.0, respring, fully kill Uber Driver, reopen it, press Go Online once, then send Documents/UberDriverBypass.log.
 
           artifacts: packages/*.deb
           artifactErrorsFailBuild: true

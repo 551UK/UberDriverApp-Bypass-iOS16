@@ -588,6 +588,18 @@ static NSData *UBRewriteBody(NSData *body) {
 
 static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
     if (!UBIsUberURL(request.URL)) return request;
+
+    static NSUInteger foundationRequestLogCount = 0;
+    if (foundationRequestLogCount < 80) {
+        @synchronized (UBTargetAppVersion) {
+            if (foundationRequestLogCount < 80) {
+                foundationRequestLogCount++;
+                UBDiagnostic([NSString stringWithFormat:@"Foundation request host=%@ path=%@",
+                              request.URL.host ?: @"", request.URL.path ?: @""]);
+            }
+        }
+    }
+
     NSMutableURLRequest *copy = [request mutableCopy];
     BOOL changed = NO;
     for (NSString *key in request.allHTTPHeaderFields) {
@@ -657,7 +669,35 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
     return %orig(UBRewriteRequest(request, YES));
 }
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))handler {
-    return %orig(UBRewriteRequest(request, YES), handler);
+    NSURLRequest *updatedRequest = UBRewriteRequest(request, YES);
+    BOOL uberRequest = UBIsUberURL(request.URL);
+    NSString *label = UBTargetPathLabel(request.URL);
+    void (^wrapped)(NSData *, NSURLResponse *, NSError *) = handler;
+
+    if (uberRequest && handler) {
+        wrapped = ^(NSData *data, NSURLResponse *response, NSError *error) {
+            if (label.length) {
+                NSString *mime = response.MIMEType ?: @"";
+                UBDiagnostic([NSString stringWithFormat:@"%@ Foundation response bytes=%lu mime=%@ error=%d",
+                              label, (unsigned long)data.length, mime, error ? 1 : 0]);
+
+                if (data.length && data.length <= 2 * 1024 * 1024) {
+                    NSString *text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+                    NSString *lower = text.lowercaseString;
+                    if ([lower containsString:@"forceupgrade"] ||
+                        [lower containsString:@"force_upgrade"] ||
+                        [lower containsString:@"minversionurl"] ||
+                        [lower containsString:@"storeurl"]) {
+                        UBDiagnostic([NSString stringWithFormat:@"%@ Foundation response contains force-upgrade text marker",
+                                      label]);
+                    }
+                }
+            }
+            handler(data, response, error);
+        };
+    }
+
+    return %orig(updatedRequest, wrapped);
 }
 - (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromData:(NSData *)body {
     NSData *updated = UBIsUberURL(request.URL) && ![request valueForHTTPHeaderField:@"Content-Encoding"].length ? UBRewriteBody(body) : body;
@@ -1244,7 +1284,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.10.0 loaded; request-path and ForceUpgrade inheritance diagnostics active");
+        UBDiagnostic(@"UberDriverBypass 0.11.0 loaded; Foundation transport diagnostics active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();

@@ -1,38 +1,43 @@
 # UberDriverApp Bypass iOS 16
 
-Rootless diagnostic candidate **0.10.0** for Uber Driver **4.527.10000** on **iOS 16.2+**.
+Rootless diagnostic candidate **0.11.0** for Uber Driver **4.527.10000** on **iOS 16.2+**.
 
-## What the v0.9.0 log proved
+## What v0.10.0 proved
 
-v0.9.0 loads and installs the native Cronet request, upload-body and response hooks, but the test log contains no targeted Go Online request/response event.
+The exact ForceUpgrade factory and adapter are Swift-native from the Objective-C runtime's perspective. Their own method lists are empty, the Presidio generic factory superclass layers are also empty, and the first superclass with Objective-C methods is only `_SwiftObject`.
 
-It also still reports:
+The v0.10.0 test also produced no `Cronet request host=` lines.
 
-`DriverChecks exact hooks installed issues=0 futureBlockers=0`
+## v0.11.0
 
-`local ForceUpgrade BOOL decision hooks installed=0`
+v0.11.0 leaves the existing compatibility behavior in place and adds targeted Foundation networking diagnostics.
 
-So the next useful step is identifying the exact request path and whether the two ForceUpgrade classes inherit any Objective-C-visible decision methods.
+For Uber NSURLSession requests it logs only:
 
-## v0.10.0 diagnostics
+- host
+- path
 
-v0.10.0 keeps the existing compatibility behavior unchanged and adds two narrow diagnostics:
+For the known `drivers/v2/go-online` and `drivers/v2/fetch-online-blockers` completion path it additionally logs:
 
-- Cronet final requests log only the **host and path**. Query strings are not logged.
-- The exact ForceUpgrade classes log their superclass chain and only inherited selectors whose names look like applicability/eligibility/blocking decisions.
+- response byte count
+- MIME type
+- whether an NSError was present
+- whether readable response text contains an explicit `ForceUpgrade`, `minVersionUrl`, or `storeUrl` marker
+
+It does not log query strings, headers, authentication data, or response contents.
 
 ## Test
 
-Install **v0.10.0**, respring, fully kill Uber Driver, reopen it, then press **Go Online once**.
+Install **v0.11.0**, respring, fully kill Uber Driver, reopen it and press **Go Online once**.
 
-Send:
+Then send:
 
 `Documents/UberDriverBypass.log`
 
-The useful new lines begin with:
+Useful new lines begin with:
 
-`Cronet request host=`
+`Foundation request host=`
 
-and
+or
 
-`hierarchy depth=` / `inherited-candidate`
+`go-online Foundation response`
