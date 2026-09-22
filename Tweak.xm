@@ -664,6 +664,92 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
 }
 %end
 
+static void UBLogSuspiciousForceUpgradeJSONPaths(id object, NSString *path, NSUInteger depth, NSUInteger *count) {
+    if (!object || depth > 12 || !count || *count >= 20) return;
+
+    if ([object isKindOfClass:NSDictionary.class]) {
+        NSDictionary *dictionary = (NSDictionary *)object;
+        for (id keyObject in dictionary) {
+            if (*count >= 20) break;
+            NSString *key = [keyObject isKindOfClass:NSString.class] ? keyObject : [keyObject description];
+            id value = dictionary[keyObject];
+            NSString *nextPath = path.length ? [path stringByAppendingFormat:@".%@", key] : key;
+
+            NSString *normalizedKey = UBForceUpgradeNormalizedString(key);
+            BOOL suspiciousKey =
+                [normalizedKey containsString:@"forceupgrade"] ||
+                [normalizedKey containsString:@"minversion"] ||
+                [normalizedKey containsString:@"storeurl"];
+
+            BOOL suspiciousValue = NO;
+            if ([value isKindOfClass:NSString.class]) {
+                NSString *normalizedValue = UBForceUpgradeNormalizedString(value);
+                suspiciousValue =
+                    [normalizedValue containsString:@"forceupgrade"] ||
+                    [normalizedValue containsString:@"minversion"];
+            }
+
+            if (suspiciousKey || suspiciousValue) {
+                (*count)++;
+                UBDiagnostic([NSString stringWithFormat:@"go-online suspicious JSON path=%@ valueType=%@",
+                              nextPath, NSStringFromClass([value class])]);
+            }
+
+            UBLogSuspiciousForceUpgradeJSONPaths(value, nextPath, depth + 1, count);
+        }
+        return;
+    }
+
+    if ([object isKindOfClass:NSArray.class]) {
+        NSArray *array = (NSArray *)object;
+        NSUInteger limit = MIN(array.count, (NSUInteger)50);
+        for (NSUInteger i = 0; i < limit && *count < 20; i++) {
+            NSString *nextPath = [path stringByAppendingFormat:@"[%lu]", (unsigned long)i];
+            UBLogSuspiciousForceUpgradeJSONPaths(array[i], nextPath, depth + 1, count);
+        }
+    }
+}
+
+static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *label) {
+    if (!data.length || data.length > 2 * 1024 * 1024 || !label.length) return data;
+
+    BOOL previousSkip = UBSkipJSONHooks;
+    UBSkipJSONHooks = YES;
+
+    id json = nil;
+    NSData *encoded = nil;
+    NSUInteger removed = 0;
+
+    @try {
+        json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        if (json) {
+            id filtered = UBFilterForceUpgradeOnlineBlockers(json, 0, &removed);
+            if (removed && [NSJSONSerialization isValidJSONObject:filtered]) {
+                encoded = [NSJSONSerialization dataWithJSONObject:filtered options:0 error:nil];
+            }
+        }
+    } @finally {
+        UBSkipJSONHooks = previousSkip;
+    }
+
+    if (removed && encoded.length) {
+        UBDiagnostic([NSString stringWithFormat:@"%@ Foundation response force-upgrade entries removed=%lu bytes=%lu->%lu",
+                      label, (unsigned long)removed, (unsigned long)data.length, (unsigned long)encoded.length]);
+        return encoded;
+    }
+
+    if (json) {
+        NSUInteger suspicious = 0;
+        UBLogSuspiciousForceUpgradeJSONPaths(json, @"$", 0, &suspicious);
+        if (suspicious) {
+            UBDiagnostic([NSString stringWithFormat:@"%@ Foundation response had suspicious ForceUpgrade JSON but no removable blocker count=%lu",
+                          label, (unsigned long)suspicious]);
+        }
+    }
+
+    return data;
+}
+
 %hook NSURLSession
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request {
     return %orig(UBRewriteRequest(request, YES));
@@ -693,7 +779,11 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
                     }
                 }
             }
-            handler(data, response, error);
+            NSData *deliveredData = data;
+            if (label.length && !error) {
+                deliveredData = UBFilterFoundationGoOnlineResponseData(data, label);
+            }
+            handler(deliveredData, response, error);
         };
     }
 
@@ -1284,7 +1374,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.11.0 loaded; Foundation transport diagnostics active");
+        UBDiagnostic(@"UberDriverBypass 0.12.0 loaded; direct Foundation Go Online response filtering active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();

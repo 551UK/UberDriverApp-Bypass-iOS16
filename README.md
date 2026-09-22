@@ -1,43 +1,45 @@
 # UberDriverApp Bypass iOS 16
 
-Rootless diagnostic candidate **0.11.0** for Uber Driver **4.527.10000** on **iOS 16.2+**.
+Rootless compatibility candidate **0.12.0** for Uber Driver **4.527.10000** on **iOS 16.2+**.
 
-## What v0.10.0 proved
+## What v0.11.0 proved
 
-The exact ForceUpgrade factory and adapter are Swift-native from the Objective-C runtime's perspective. Their own method lists are empty, the Presidio generic factory superclass layers are also empty, and the first superclass with Objective-C methods is only `_SwiftObject`.
+The remaining update gate is now on a confirmed network path:
 
-The v0.10.0 test also produced no `Cronet request host=` lines.
+- `/rt/drivers/v2/go-online`
+- Foundation / `NSURLSession`
+- response size: **488 bytes**
+- MIME type: **application/json**
+- no transport error
+- response contains an explicit ForceUpgrade / minimum-version / store-URL marker
 
-## v0.11.0
+So the Go Online request is not using the native Cronet path targeted by the earlier builds.
 
-v0.11.0 leaves the existing compatibility behavior in place and adds targeted Foundation networking diagnostics.
+## v0.12.0
 
-For Uber NSURLSession requests it logs only:
+v0.12.0 runs the existing narrow ForceUpgrade JSON filter directly on the completed Foundation response **before the original Uber completion handler receives it**.
 
-- host
-- path
+It removes only:
 
-For the known `drivers/v2/go-online` and `drivers/v2/fetch-online-blockers` completion path it additionally logs:
+- explicit ForceUpgrade blocker objects already recognized by the tweak
+- explicit force-upgrade boolean gates
 
-- response byte count
-- MIME type
-- whether an NSError was present
-- whether readable response text contains an explicit `ForceUpgrade`, `minVersionUrl`, or `storeUrl` marker
+Other required actions are left unchanged.
 
-It does not log query strings, headers, authentication data, or response contents.
+If the response contains a ForceUpgrade-shaped JSON structure the current filter does not yet recognize, the tweak logs only suspicious JSON **paths and value types**. It does not log response values, tokens or authentication data.
 
 ## Test
 
-Install **v0.11.0**, respring, fully kill Uber Driver, reopen it and press **Go Online once**.
+Install **v0.12.0**, respring, fully kill Uber Driver, reopen it and press **Go Online once**.
 
-Then send:
+If it still shows the update requirement, send:
 
 `Documents/UberDriverBypass.log`
 
-Useful new lines begin with:
+The key new lines are:
 
-`Foundation request host=`
+`go-online Foundation response force-upgrade entries removed=`
 
 or
 
-`go-online Foundation response`
+`go-online suspicious JSON path=`

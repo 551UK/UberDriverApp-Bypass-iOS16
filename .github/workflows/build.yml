@@ -41,7 +41,7 @@ jobs:
           test -n "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
           test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64"
-          test "$(dpkg-deb -f "$deb" Version)" = "0.11.0"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.12.0"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/uberdriver-check"
           dylib="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.dylib"
           filter="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.plist"
@@ -54,14 +54,16 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: ncipollo/release-action@v1
         with:
-          tag: v0.11.0
-          name: UberDriverApp Bypass iOS 16 v0.11.0
+          tag: v0.12.0
+          name: UberDriverApp Bypass iOS 16 v0.12.0
           body: |
-            Foundation transport diagnostic build for Uber Driver 4.527.10000.
+            Direct Foundation Go Online response filtering candidate for Uber Driver 4.527.10000.
 
-            The v0.10.0 device log shows the ForceUpgrade factory and adapter plus their Presidio superclass layers expose no Objective-C methods, so that hook path cannot reach the Swift-native blocker. It also produced no Cronet request path lines. v0.11.0 keeps the existing compatibility behavior and adds narrow NSURLSession diagnostics: Uber requests log only host and path, and the known go-online/fetch-online-blockers completion path logs response byte count, MIME type, error presence, and whether readable text contains an explicit ForceUpgrade/minVersion/storeUrl marker. Query strings, headers, tokens and response contents are not logged.
+            The v0.11.0 device log identifies the real remaining path: /rt/drivers/v2/go-online is sent through Foundation/NSURLSession, returns HTTP data successfully as 488 bytes of application/json, and that JSON contains an explicit ForceUpgrade/minVersion/storeUrl marker. The native Cronet path is not the one carrying this request.
 
-            Install v0.11.0, respring, fully kill Uber Driver, reopen it, press Go Online once, then send Documents/UberDriverBypass.log.
+            v0.12.0 therefore applies the existing narrow ForceUpgrade JSON filter directly to the completed Foundation response before Uber's original completion handler receives it. Only explicit force-upgrade blocker objects and force-upgrade boolean gates are changed; unrelated required actions remain untouched. If the 488-byte response contains a ForceUpgrade-shaped JSON structure that the current filter still does not recognize, v0.12.0 logs only the suspicious JSON key paths and value types, not response values or authentication data.
+
+            Install v0.12.0, respring, fully kill Uber Driver, reopen it and press Go Online once. If the update blocker remains, send Documents/UberDriverBypass.log.
 
           artifacts: packages/*.deb
           artifactErrorsFailBuild: true
