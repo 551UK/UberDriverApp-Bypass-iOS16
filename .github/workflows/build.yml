@@ -41,7 +41,7 @@ jobs:
           test -n "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
           test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64"
-          test "$(dpkg-deb -f "$deb" Version)" = "0.8.0"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.9.0"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/uberdriver-check"
           dylib="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.dylib"
           filter="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.plist"
@@ -54,12 +54,14 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: ncipollo/release-action@v1
         with:
-          tag: v0.8.0
-          name: UberDriverApp Bypass iOS 16 v0.8.0
+          tag: v0.9.0
+          name: UberDriverApp Bypass iOS 16 v0.9.0
           body: |
-            Local DriverIntegration ForceUpgrade blocker compatibility candidate for Uber Driver 4.527.10000.
+            Targeted Cronet response-level ForceUpgrade filtering candidate for Uber Driver 4.527.10000.
 
-            The v0.7.0 log proves the Cronet hooks and upload-body hooks install, but pressing Go Online produces no Cronet final-request or upload-body rewrite diagnostics. That points away from the outgoing request path and toward an already-decoded/local DriverIntegration ForceUpgrade blocker. v0.8.0 therefore inspects the exact ForceUpgradeOnlineBlockerPluginFactory and ForceUpgradeBlockerAdapter runtime classes and safely forces only Objective-C-visible BOOL decision methods with zero arguments or one object argument to return NO. It logs every method name/type it finds so the remaining local blocker path can be identified without the unsafe broad runtime patch used in v0.3.0. Existing iOS 18 and request compatibility hooks remain enabled. Install v0.8.0, respring, fully kill Uber Driver, reopen it and attempt Go Online.
+            The v0.8.0 device log shows the tweak and Cronet upload hooks load, but the exact Objective-C-visible DriverChecks and local ForceUpgrade BOOL hooks both install zero methods. That means the remaining Go Online blocker is not exposed through those Objective-C selectors. v0.9.0 therefore adds a narrow native Cronet response hook only for drivers/v2/go-online and drivers/v2/fetch-online-blockers. When a response chunk is complete JSON, it removes only explicit ForceUpgrade blocker objects or force-upgrade booleans, re-encodes the JSON, and pads the remainder with whitespace so Cronet's original byte count is preserved. Non-JSON/protobuf chunks are left untouched and only logged if they contain a recognizable ForceUpgrade/minVersion/storeUrl marker. Existing iOS 18 request compatibility hooks remain enabled.
+
+            Install v0.9.0, respring, fully kill Uber Driver, reopen it and attempt Go Online. If the update blocker remains, send Documents/UberDriverBypass.log.
 
           artifacts: packages/*.deb
           artifactErrorsFailBuild: true

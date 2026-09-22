@@ -21,6 +21,7 @@ static NSString * const UBOldContinuousVersion = @"273504.1";
 static NSString * const UBTargetContinuousVersion = @"326106.1";
 static NSString * const UBTargetBuildUUID = @"7a058960-ab07-11f1-8af6-ebef13f4ae76";
 static NSString *UBActualOSVersion = nil;
+static __thread BOOL UBSkipJSONHooks = NO;
 
 static BOOL UBIsMainBundle(NSBundle *bundle) {
     return bundle && bundle == NSBundle.mainBundle;
@@ -595,12 +596,14 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
 
 %hook NSJSONSerialization
 + (NSData *)dataWithJSONObject:(id)object options:(NSJSONWritingOptions)options error:(NSError **)error {
+    if (UBSkipJSONHooks) return %orig(object, options, error);
     NSUInteger changes = 0;
     id updated = UBRewriteJSON(object, 0, &changes);
     return %orig(updated, options, error);
 }
 
 + (id)JSONObjectWithData:(NSData *)data options:(NSJSONReadingOptions)options error:(NSError **)error {
+    if (UBSkipJSONHooks) return %orig(data, options, error);
     id result = %orig(data, options, error);
     NSUInteger removed = 0;
     id filtered = UBFilterForceUpgradeOnlineBlockers(result, 0, &removed);
@@ -612,6 +615,7 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
 }
 
 + (id)JSONObjectWithStream:(NSInputStream *)stream options:(NSJSONReadingOptions)options error:(NSError **)error {
+    if (UBSkipJSONHooks) return %orig(stream, options, error);
     id result = %orig(stream, options, error);
     NSUInteger removed = 0;
     id filtered = UBFilterForceUpgradeOnlineBlockers(result, 0, &removed);
@@ -779,6 +783,7 @@ typedef void (*UBCronetUploadSinkOnReadSucceededIMP)(void *, uint64_t, bool);
 typedef uint64_t (*UBCronetBufferGetSizeIMP)(void *);
 typedef void *(*UBCronetBufferGetDataIMP)(void *);
 typedef int (*UBCronetUrlRequestInitIMP)(void *, void *, const char *, void *, void *, void *);
+typedef void (*UBCronetOnReadCompletedIMP)(void *, void *, void *, void *, uint64_t);
 
 static UBCronetHeaderStringGetter UBCronetHeaderNameGet = NULL;
 static UBCronetHeaderStringGetter UBCronetHeaderValueGet = NULL;
@@ -792,9 +797,11 @@ static UBCronetUploadSinkOnReadSucceededIMP UBOrigCronetUploadSinkOnReadSucceede
 static UBCronetBufferGetSizeIMP UBCronetBufferGetSize = NULL;
 static UBCronetBufferGetDataIMP UBCronetBufferGetData = NULL;
 static UBCronetUrlRequestInitIMP UBOrigCronetUrlRequestInit = NULL;
+static UBCronetOnReadCompletedIMP UBOrigCronetOnReadCompleted = NULL;
 
 static NSMutableDictionary<NSValue *, NSValue *> *UBCronetProviderReadCallbacks = nil;
 static NSMutableDictionary<NSValue *, NSValue *> *UBCronetSinkBuffers = nil;
+static NSMutableDictionary<NSValue *, NSString *> *UBCronetRequestURLs = nil;
 static NSObject *UBCronetUploadLock = nil;
 
 static void UBEnsureCronetUploadState(void) {
@@ -802,8 +809,25 @@ static void UBEnsureCronetUploadState(void) {
     dispatch_once(&onceToken, ^{
         UBCronetProviderReadCallbacks = [NSMutableDictionary dictionary];
         UBCronetSinkBuffers = [NSMutableDictionary dictionary];
+        UBCronetRequestURLs = [NSMutableDictionary dictionary];
         UBCronetUploadLock = [NSObject new];
     });
+}
+
+static void UBRememberCronetRequestURL(void *request, NSURL *url) {
+    if (!request || !UBIsGoOnlinePath(url)) return;
+    UBEnsureCronetUploadState();
+    @synchronized (UBCronetUploadLock) {
+        UBCronetRequestURLs[[NSValue valueWithPointer:request]] = url.absoluteString ?: @"";
+    }
+}
+
+static NSString *UBCronetURLForRequest(void *request) {
+    if (!request) return nil;
+    UBEnsureCronetUploadState();
+    @synchronized (UBCronetUploadLock) {
+        return UBCronetRequestURLs[[NSValue valueWithPointer:request]];
+    }
 }
 
 static UBCronetUploadReadFunc UBOriginalReadCallbackForProvider(void *provider) {
@@ -963,6 +987,7 @@ static int UBHookCronetUrlRequestInit(void *request,
     NSString *urlString = url ? [NSString stringWithUTF8String:url] : nil;
     NSURL *nsURL = urlString.length ? [NSURL URLWithString:urlString] : nil;
     if (UBIsGoOnlinePath(nsURL)) {
+        UBRememberCronetRequestURL(request, nsURL);
         BOOL hasUploadProvider = params && UBCronetUploadProviderGet && UBCronetUploadProviderGet(params) != NULL;
         UBDiagnostic([NSString stringWithFormat:
             @"Cronet %@ final request headers inspected appVersionHeader=%d deviceDataHeader=%d rewrites=%lu uploadProvider=%d",
@@ -972,6 +997,72 @@ static int UBHookCronetUrlRequestInit(void *request,
     return UBOrigCronetUrlRequestInit
         ? UBOrigCronetUrlRequestInit(request, engine, url, params, callback, executor)
         : 0;
+}
+
+static void UBHookCronetUrlRequestCallbackOnReadCompleted(void *callback,
+                                                           void *request,
+                                                           void *info,
+                                                           void *buffer,
+                                                           uint64_t bytesRead) {
+    (void)info;
+    NSString *urlString = UBCronetURLForRequest(request);
+    NSURL *url = urlString.length ? [NSURL URLWithString:urlString] : nil;
+
+    if (url && buffer && bytesRead > 0 && UBCronetBufferGetSize && UBCronetBufferGetData) {
+        uint64_t capacity = UBCronetBufferGetSize(buffer);
+        uint64_t count = bytesRead < capacity ? bytesRead : capacity;
+        void *raw = UBCronetBufferGetData(buffer);
+
+        if (raw && count > 0 && count <= NSUIntegerMax) {
+            NSData *before = [NSData dataWithBytes:raw length:(NSUInteger)count];
+            __block NSUInteger removed = 0;
+            __block NSData *encoded = nil;
+            __block BOOL parsedJSON = NO;
+
+            BOOL previousSkip = UBSkipJSONHooks;
+            UBSkipJSONHooks = YES;
+            @try {
+                id json = [NSJSONSerialization JSONObjectWithData:before options:0 error:nil];
+                if (json) {
+                    parsedJSON = YES;
+                    id filtered = UBFilterForceUpgradeOnlineBlockers(json, 0, &removed);
+                    if (removed && [NSJSONSerialization isValidJSONObject:filtered]) {
+                        encoded = [NSJSONSerialization dataWithJSONObject:filtered options:0 error:nil];
+                    }
+                }
+            } @finally {
+                UBSkipJSONHooks = previousSkip;
+            }
+
+            if (removed && encoded.length && encoded.length <= (NSUInteger)count) {
+                memset(raw, ' ', (size_t)count);
+                memcpy(raw, encoded.bytes, encoded.length);
+                UBDiagnostic([NSString stringWithFormat:
+                    @"Cronet %@ response force-upgrade JSON filtered entries=%lu bytes=%llu->%lu",
+                    UBTargetPathLabel(url), (unsigned long)removed,
+                    (unsigned long long)count, (unsigned long)encoded.length]);
+            } else if (removed && encoded.length > (NSUInteger)count) {
+                UBDiagnostic([NSString stringWithFormat:
+                    @"Cronet %@ response filter skipped because encoded JSON grew bytes=%llu->%lu",
+                    UBTargetPathLabel(url), (unsigned long long)count, (unsigned long)encoded.length]);
+            } else if (!parsedJSON) {
+                NSString *text = [[NSString alloc] initWithData:before encoding:NSUTF8StringEncoding];
+                NSString *lower = text.lowercaseString;
+                if ([lower containsString:@"force_upgrade"] ||
+                    [lower containsString:@"forceupgrade"] ||
+                    [lower containsString:@"minversionurl"] ||
+                    [lower containsString:@"storeurl"]) {
+                    UBDiagnostic([NSString stringWithFormat:
+                        @"Cronet %@ response contains force-upgrade marker in non-JSON chunk bytes=%llu",
+                        UBTargetPathLabel(url), (unsigned long long)count]);
+                }
+            }
+        }
+    }
+
+    if (UBOrigCronetOnReadCompleted) {
+        UBOrigCronetOnReadCompleted(callback, request, info, buffer, bytesRead);
+    }
 }
 
 static void UBInstallNativeCronetHooks(void) {
@@ -996,6 +1087,7 @@ static void UBInstallNativeCronetHooks(void) {
     void *requestInit = dlsym(handle, "Cronet_UrlRequest_InitWithParams");
     void *uploadProviderCreateWith = dlsym(handle, "Cronet_UploadDataProvider_CreateWith");
     void *uploadSinkOnReadSucceeded = dlsym(handle, "Cronet_UploadDataSink_OnReadSucceeded");
+    void *onReadCompleted = dlsym(handle, "Cronet_UrlRequestCallback_OnReadCompleted");
 
     if (!UBCronetHeaderNameGet || !UBCronetHeaderValueGet || !UBCronetHeaderValueSet ||
         !UBCronetHeadersSize || !UBCronetHeadersAt || !headersAdd || !requestInit) {
@@ -1021,10 +1113,22 @@ static void UBInstallNativeCronetHooks(void) {
                        (void **)&UBOrigCronetUploadSinkOnReadSucceeded);
     }
 
+    if (onReadCompleted && UBCronetBufferGetSize && UBCronetBufferGetData) {
+        UBEnsureCronetUploadState();
+        MSHookFunction(onReadCompleted,
+                       (void *)&UBHookCronetUrlRequestCallbackOnReadCompleted,
+                       (void **)&UBOrigCronetOnReadCompleted);
+    }
+
     if (UBOrigCronetHeadersAdd && UBOrigCronetUrlRequestInit) {
-        UBDiagnostic((UBOrigCronetUploadProviderCreateWith && UBOrigCronetUploadSinkOnReadSucceeded)
-            ? @"native Cronet add+final-request+upload-body hooks installed"
-            : @"native Cronet add+final-request hooks installed; upload-body hooks unavailable");
+        if (UBOrigCronetUploadProviderCreateWith && UBOrigCronetUploadSinkOnReadSucceeded &&
+            UBOrigCronetOnReadCompleted) {
+            UBDiagnostic(@"native Cronet add+final-request+upload-body+response hooks installed");
+        } else if (UBOrigCronetUploadProviderCreateWith && UBOrigCronetUploadSinkOnReadSucceeded) {
+            UBDiagnostic(@"native Cronet add+final-request+upload-body hooks installed; response hook unavailable");
+        } else {
+            UBDiagnostic(@"native Cronet add+final-request hooks installed; upload-body/response hooks unavailable");
+        }
     } else {
         UBDiagnostic(@"native Cronet hook installation incomplete");
     }
@@ -1103,7 +1207,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.8.0 loaded; local ForceUpgrade blocker targeting active");
+        UBDiagnostic(@"UberDriverBypass 0.9.0 loaded; Cronet response ForceUpgrade filtering active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();

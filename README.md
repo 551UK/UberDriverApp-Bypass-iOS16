@@ -1,35 +1,42 @@
 # UberDriverApp Bypass iOS 16
 
-Rootless compatibility candidate **0.7.0** for Uber Driver **4.527.10000** on **iOS 16.2+**.
+Rootless compatibility candidate **0.9.0** for Uber Driver **4.527.10000** on **iOS 16.2+**.
 
-## What the v0.6.1 log proved
+## What the v0.8.0 log proved
 
-The tweak loaded with the iOS 18 spoof and the native Cronet final-request hooks installed, but there were **no Go Online/fetch-online-blockers request diagnostics**. The exact Swift DriverChecks hooks also reported `issues=0 futureBlockers=0`.
+The tweak loads and the native Cronet request/upload hooks install, but the exact Objective-C-visible local blocker hooks report:
 
-That means repeatedly changing Foundation headers or the visible iOS version is not addressing the remaining app-version blocker.
+`DriverChecks exact hooks installed issues=0 futureBlockers=0`
 
-## v0.7.0 change
+`local ForceUpgrade BOOL decision hooks installed=0`
 
-The old app bundles Chromium **Cronet 100.0.4863.0**. Its native upload API supplies request bodies through `Cronet_UploadDataProvider` into a `Cronet_Buffer`, then calls `Cronet_UploadDataSink_OnReadSucceeded`.
+That means the remaining **Update your app to receive requests** Go Online blocker is not exposed through those Objective-C selectors.
 
-v0.7.0 hooks that upload-provider path. For each completed upload chunk it performs only **equal-length** substitutions before Cronet sends the bytes:
+## v0.9.0 change
 
-- `4.527.10000` → `4.584.10000`
-- `273504.1` → `326106.1`
-- iOS 16.x strings → the existing **iOS 18.0** identity where the byte lengths match
+v0.9.0 adds a targeted native Cronet **response** hook for only:
 
-Equal-length replacement is intentional so serialized protobuf/Thrift field lengths are not changed.
+- `drivers/v2/go-online`
+- `drivers/v2/fetch-online-blockers`
 
-The existing iOS 18 spoof, bundle/request identity hooks, Cronet header hooks and force-upgrade JSON filtering remain.
+If a returned Cronet chunk is complete JSON, the tweak removes only explicit ForceUpgrade blocker entries and force-upgrade boolean gates. It then pads the shortened JSON with trailing whitespace so the original Cronet byte count is unchanged.
+
+If the response is protobuf, compressed, split across chunks, or otherwise not JSON, v0.9.0 does **not** corrupt or replace it. It only records a diagnostic when recognizable `ForceUpgrade`, `minVersionUrl`, or `storeUrl` text appears.
+
+Existing iOS 18 identity, request/header, upload-body, JSON and local blocker hooks remain enabled.
 
 ## Test
 
-Install **v0.7.0**, respring, fully kill Uber Driver, reopen it and attempt **Go Online**.
+Install **v0.9.0**, respring, fully kill Uber Driver, reopen it, and attempt **Go Online**.
 
-Then send `Documents/UberDriverBypass.log`.
+If the blocker remains, send:
 
-The key new line is:
+`Documents/UberDriverBypass.log`
 
-`Cronet upload body compatibility bytes rewritten bytes=... final=...`
+Useful new log lines start with:
 
-If that appears, we know the old app identity was found inside a native Cronet upload body and changed immediately before transmission.
+`Cronet go-online response ...`
+
+or
+
+`Cronet fetch-online-blockers response ...`

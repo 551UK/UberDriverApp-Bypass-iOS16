@@ -1,8 +1,8 @@
 Package: com.551.uberdriverbypass
 Name: UberDriverApp Bypass iOS 16
-Version: 0.8.0
+Version: 0.9.0
 Architecture: iphoneos-arm64
-Description: Local ForceUpgrade online-blocker compatibility patch for Uber Driver 4.527.10000 on rootless iOS 16.
+Description: Cronet response-level ForceUpgrade online-blocker compatibility patch for Uber Driver 4.527.10000 on rootless iOS 16.
 Maintainer: 551UK
 Author: 551UK
 Section: Tweaks
