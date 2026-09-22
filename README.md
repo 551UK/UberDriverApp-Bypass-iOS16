@@ -1,35 +1,35 @@
 # UberDriverApp Bypass iOS 16
 
-Rootless compatibility candidate **0.6.1** for Uber Driver **4.527.10000** on **iOS 16.2+**.
+Rootless compatibility candidate **0.7.0** for Uber Driver **4.527.10000** on **iOS 16.2+**.
 
-## What the v0.5.0 log proved
+## What the v0.6.1 log proved
 
-The v0.5.0 hook loaded and the native Cronet hook installed. However, the log also showed the attempted Objective-C hooks for `DriverChecksErrorData.issues` and `futureBlockers` both returned **0**, so that generated Swift model is not exposed through the Objective-C runtime in this build.
+The tweak loaded with the iOS 18 spoof and the native Cronet final-request hooks installed, but there were **no Go Online/fetch-online-blockers request diagnostics**. The exact Swift DriverChecks hooks also reported `issues=0 futureBlockers=0`.
 
-The old app's generated Go Online service has a direct `version` argument and a `DriverGoOnlineV2Request.deviceData` field. That means the app version can be inside the serialized Go Online payload rather than a standalone HTTP header.
+That means repeatedly changing Foundation headers or the visible iOS version is not addressing the remaining app-version blocker.
 
-## v0.6.1 changes
+## v0.7.0 change
 
-- Hooks `Cronet_UrlRequest_InitWithParams`, not just header-add calls, so headers are inspected and rewritten at the **final native request boundary**.
-- Rewrites **any Cronet header value** containing:
-  - `4.527.10000` → `4.584.10000`
-  - `273504.1` → `326106.1`
-- Rewrites `x-uber-device-data` at that final boundary too.
-- Applies equal-length compatibility replacement to **opaque Uber request bodies**, not only device-registration bodies. This specifically covers serialized Thrift/protobuf-style Go Online payloads where the old version string may be embedded in `deviceData`.
-- Adds focused diagnostics for:
-  - `drivers/v2/go-online`
-  - `drivers/v2/fetch-online-blockers`
-- Removes the noisy “request observed” and repeated JSON-change log spam so the useful Go Online diagnostics are not exhausted immediately after launch.
-- Spoofs iOS **18.0 / 22A3354** across every OS identity path, including UIDevice, NSProcessInfo, bundle metadata, request metadata, x-uber-device-data, opaque bodies and sysctl. `kern.osrelease` is spoofed as **24.0.0**.
+The old app bundles Chromium **Cronet 100.0.4863.0**. Its native upload API supplies request bodies through `Cronet_UploadDataProvider` into a `Cronet_Buffer`, then calls `Cronet_UploadDataSink_OnReadSucceeded`.
+
+v0.7.0 hooks that upload-provider path. For each completed upload chunk it performs only **equal-length** substitutions before Cronet sends the bytes:
+
+- `4.527.10000` → `4.584.10000`
+- `273504.1` → `326106.1`
+- iOS 16.x strings → the existing **iOS 18.0** identity where the byte lengths match
+
+Equal-length replacement is intentional so serialized protobuf/Thrift field lengths are not changed.
+
+The existing iOS 18 spoof, bundle/request identity hooks, Cronet header hooks and force-upgrade JSON filtering remain.
 
 ## Test
 
-Install **v0.6.1**, respring, fully kill Uber Driver, reopen it and attempt **Go Online**.
+Install **v0.7.0**, respring, fully kill Uber Driver, reopen it and attempt **Go Online**.
 
 Then send `Documents/UberDriverBypass.log`.
 
-The most useful new line is:
+The key new line is:
 
-`Cronet go-online final request headers inspected appVersionHeader=... deviceDataHeader=... rewrites=... uploadProvider=...`
+`Cronet upload body compatibility bytes rewritten bytes=... final=...`
 
-That tells us whether the actual Go Online request has its version in a header/device-data header or whether the request is carrying it in Cronet's upload body.
+If that appears, we know the old app identity was found inside a native Cronet upload body and changed immediately before transmission.
