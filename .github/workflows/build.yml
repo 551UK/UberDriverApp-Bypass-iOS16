@@ -24,7 +24,7 @@ jobs:
         if: runner.os == 'macOS'
         run: python3 tests/test_metadata.py
 
-      - name: Validate v0.16 request identity
+      - name: Validate v0.17 request identity diagnostics
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -51,7 +51,7 @@ jobs:
           test -n "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
           test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64"
-          test "$(dpkg-deb -f "$deb" Version)" = "0.16.0"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.17.0"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/uberdriver-check"
           dylib="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.dylib"
           filter="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.plist"
@@ -67,16 +67,16 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: ncipollo/release-action@v1
         with:
-          tag: v0.16.0
-          name: UberDriverApp Bypass iOS 16 v0.16.0
+          tag: v0.17.0
+          name: UberDriverApp Bypass iOS 16 v0.17.0
           body: |
-            Expanded Go Online app-version identity compatibility candidate for Uber Driver 4.527.10000.
+            Expanded Go Online identity diagnostic build for Uber Driver 4.527.10000.
 
-            v0.15.0 proves the server itself returns HTTP 423 Locked on /rt/drivers/v2/go-online even after the ForceUpgrade issue is removed from the JSON. Changing the response locally would not put the driver online, so v0.16.0 moves to the outgoing compatibility identity instead.
+            v0.16.0 proves x-uber-client-version is already 4.584.10000 at the Foundation network boundary, while the server still returns HTTP 423 with the same ForceUpgrade issue. Its JSON body contains none of the known version keys, so v0.17.0 keeps the existing compatibility/filter behavior and broadens diagnostics only.
 
-            In addition to the existing x-uber-client-version/appVersion handling, this build recognizes source_app_version, providerAppVersion, originAppVersion and app_version_string as app-version identity fields and rewrites them to the comparison app version. It also logs only version-related request fields for the Go Online call so the next device log shows what app identity is actually reaching the network boundary.
+            For the Go Online request it logs non-sensitive version/device/build-related header names, version-like JSON key paths, and occurrence counts for the old/new app and continuous-version strings in the raw body. Sensitive names such as authorization, token, cookie, session, signature, UUID, user/driver IDs and location fields are explicitly excluded.
 
-            Install v0.16.0, respring, fully kill Uber Driver, reopen it and press Go Online once. Then send Documents/UberDriverBypass.log.
+            Install v0.17.0, respring, fully kill Uber Driver, reopen it and press Go Online once. Then send Documents/UberDriverBypass.log.
 
           artifacts: packages/*.deb
           artifactErrorsFailBuild: true

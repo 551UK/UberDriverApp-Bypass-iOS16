@@ -249,14 +249,143 @@ static void UBLogVersionJSONFields(id object, NSString *path, NSUInteger depth, 
     }
 }
 
+static BOOL UBVersionishName(NSString *name) {
+    NSString *k = UBNormalizedKey(name ?: @"");
+    if (!k.length) return NO;
+    return [k containsString:@"version"] ||
+           [k containsString:@"build"] ||
+           [k containsString:@"app"] ||
+           [k containsString:@"client"] ||
+           [k containsString:@"device"] ||
+           [k containsString:@"continuous"] ||
+           [k containsString:@"os"];
+}
+
+static BOOL UBSensitiveName(NSString *name) {
+    NSString *k = UBNormalizedKey(name ?: @"");
+    return [k containsString:@"authorization"] ||
+           [k containsString:@"token"] ||
+           [k containsString:@"cookie"] ||
+           [k containsString:@"session"] ||
+           [k containsString:@"signature"] ||
+           [k containsString:@"secret"] ||
+           [k containsString:@"latitude"] ||
+           [k containsString:@"longitude"] ||
+           [k containsString:@"location"] ||
+           [k containsString:@"uuid"] ||
+           [k containsString:@"userid"] ||
+           [k containsString:@"driverid"];
+}
+
+static BOOL UBValueLooksLikeShortVersion(id value) {
+    if ([value isKindOfClass:NSNumber.class]) return YES;
+    if (![value isKindOfClass:NSString.class]) return NO;
+    NSString *s = (NSString *)value;
+    if (!s.length || s.length > 40) return NO;
+
+    NSCharacterSet *allowed = [NSCharacterSet characterSetWithCharactersInString:
+        @"0123456789.-_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"];
+    if ([[s stringByTrimmingCharactersInSet:allowed] length] != 0) return NO;
+
+    return [s rangeOfCharacterFromSet:NSCharacterSet.decimalDigitCharacterSet].location != NSNotFound;
+}
+
+static NSUInteger UBCountUTF8Occurrences(NSData *data, NSString *needleString) {
+    if (!data.length || !needleString.length) return 0;
+    NSData *needle = [needleString dataUsingEncoding:NSUTF8StringEncoding];
+    if (!needle.length || needle.length > data.length) return 0;
+
+    const uint8_t *bytes = data.bytes;
+    const uint8_t *needleBytes = needle.bytes;
+    NSUInteger count = 0;
+    for (NSUInteger i = 0; i + needle.length <= data.length; ) {
+        if (memcmp(bytes + i, needleBytes, needle.length) == 0) {
+            count++;
+            i += needle.length;
+        } else {
+            i++;
+        }
+    }
+    return count;
+}
+
+static void UBLogVersionishJSONPaths(id object, NSString *path, NSUInteger depth, NSUInteger *count) {
+    if (!object || depth > 12 || !count || *count >= 80) return;
+
+    if ([object isKindOfClass:NSDictionary.class]) {
+        NSDictionary *dictionary = (NSDictionary *)object;
+        for (id keyObject in dictionary) {
+            if (*count >= 80) break;
+            NSString *key = [keyObject isKindOfClass:NSString.class] ? keyObject : [keyObject description];
+            id value = dictionary[keyObject];
+            NSString *nextPath = path.length ? [path stringByAppendingFormat:@".%@", key] : key;
+
+            if (UBVersionishName(key) && !UBSensitiveName(key)) {
+                (*count)++;
+                if (UBValueLooksLikeShortVersion(value)) {
+                    NSString *safeValue = [value description] ?: @"";
+                    UBDiagnostic([NSString stringWithFormat:@"go-online identity JSON path=%@ type=%@ value=%@",
+                                  nextPath, NSStringFromClass([value class]), safeValue]);
+                } else {
+                    UBDiagnostic([NSString stringWithFormat:@"go-online identity JSON path=%@ type=%@",
+                                  nextPath, NSStringFromClass([value class])]);
+                }
+            }
+
+            UBLogVersionishJSONPaths(value, nextPath, depth + 1, count);
+        }
+        return;
+    }
+
+    if ([object isKindOfClass:NSArray.class]) {
+        NSArray *array = (NSArray *)object;
+        NSUInteger limit = MIN(array.count, (NSUInteger)40);
+        for (NSUInteger i = 0; i < limit && *count < 80; i++) {
+            UBLogVersionishJSONPaths(array[i],
+                                     [path stringByAppendingFormat:@"[%lu]", (unsigned long)i],
+                                     depth + 1, count);
+        }
+    }
+}
+
 static void UBDiagnoseGoOnlineVersionIdentity(NSURLRequest *request, NSData *body) {
     if (!UBIsGoOnlinePath(request.URL)) return;
 
     for (NSString *header in request.allHTTPHeaderFields) {
-        if (!UBIsVersionDiagnosticKey(header)) continue;
         NSString *value = request.allHTTPHeaderFields[header] ?: @"";
-        if (value.length > 80) value = [value substringToIndex:80];
-        UBDiagnostic([NSString stringWithFormat:@"go-online request version header %@=%@", header, value]);
+
+        if (UBIsVersionDiagnosticKey(header)) {
+            NSString *safeValue = value.length > 80 ? [value substringToIndex:80] : value;
+            UBDiagnostic([NSString stringWithFormat:@"go-online request version header %@=%@", header, safeValue]);
+            continue;
+        }
+
+        if (UBVersionishName(header) && !UBSensitiveName(header)) {
+            if ([[UBNormalizedKey(header) lowercaseString] isEqualToString:@"xuberdevicedata"]) {
+                UBDiagnostic([NSString stringWithFormat:
+                    @"go-online identity header %@ present length=%lu oldApp=%lu targetApp=%lu oldContinuous=%lu targetContinuous=%lu",
+                    header, (unsigned long)value.length,
+                    (unsigned long)[value componentsSeparatedByString:UBOldAppVersion].count - 1,
+                    (unsigned long)[value componentsSeparatedByString:UBTargetAppVersion].count - 1,
+                    (unsigned long)[value componentsSeparatedByString:UBOldContinuousVersion].count - 1,
+                    (unsigned long)[value componentsSeparatedByString:UBTargetContinuousVersion].count - 1]);
+            } else if (UBValueLooksLikeShortVersion(value)) {
+                NSString *safeValue = value.length > 80 ? [value substringToIndex:80] : value;
+                UBDiagnostic([NSString stringWithFormat:@"go-online identity header %@=%@", header, safeValue]);
+            } else {
+                UBDiagnostic([NSString stringWithFormat:@"go-online identity header %@ present length=%lu",
+                              header, (unsigned long)value.length]);
+            }
+        }
+    }
+
+    if (body.length) {
+        UBDiagnostic([NSString stringWithFormat:
+            @"go-online body identity occurrences oldApp=%lu targetApp=%lu oldContinuous=%lu targetContinuous=%lu",
+            (unsigned long)UBCountUTF8Occurrences(body, UBOldAppVersion),
+            (unsigned long)UBCountUTF8Occurrences(body, UBTargetAppVersion),
+            (unsigned long)UBCountUTF8Occurrences(body, UBOldContinuousVersion),
+            (unsigned long)UBCountUTF8Occurrences(body, UBTargetContinuousVersion)]);
     }
 
     if (!body.length || [request valueForHTTPHeaderField:@"Content-Encoding"].length) return;
@@ -275,6 +404,11 @@ static void UBDiagnoseGoOnlineVersionIdentity(NSURLRequest *request, NSData *bod
         UBLogVersionJSONFields(json, @"$", 0, &count);
         UBDiagnostic([NSString stringWithFormat:@"go-online request version fields logged=%lu bodyBytes=%lu",
                       (unsigned long)count, (unsigned long)body.length]);
+
+        NSUInteger identityCount = 0;
+        UBLogVersionishJSONPaths(json, @"$", 0, &identityCount);
+        UBDiagnostic([NSString stringWithFormat:@"go-online identity JSON paths logged=%lu",
+                      (unsigned long)identityCount]);
     } else {
         UBDiagnostic([NSString stringWithFormat:@"go-online request body non-JSON bytes=%lu",
                       (unsigned long)body.length]);
@@ -1514,7 +1648,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.16.0 loaded; expanded request version identity compatibility active");
+        UBDiagnostic(@"UberDriverBypass 0.17.0 loaded; expanded Go Online identity diagnostics active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();

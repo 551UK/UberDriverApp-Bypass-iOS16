@@ -1,33 +1,33 @@
 # UberDriverApp Bypass iOS 16
 
-Rootless compatibility candidate **0.16.0** for Uber Driver **4.527.10000** on **iOS 16.2+**.
+Rootless diagnostic candidate **0.17.0** for Uber Driver **4.527.10000** on **iOS 16.2+**.
 
-## What v0.15.0 proved
+## What v0.16.0 proved
 
-The live `/rt/drivers/v2/go-online` request receives **HTTP 423 Locked** from Uber's server.
+The Go Online request already sends:
 
-v0.14/v0.15 remove the ForceUpgrade issue from the JSON shown to the old app, which removes the red update warning, but that does not make the server accept the online transition.
+`x-uber-client-version = 4.584.10000`
 
-## v0.16.0
+but Uber still responds with **HTTP 423** and the same ForceUpgrade issue.
 
-v0.16.0 keeps the working ForceUpgrade response filter but moves the compatibility work to the outgoing app identity.
+The request body is JSON, but none of the version keys recognized by v0.16 are present.
 
-It expands app-version rewriting to include:
+## v0.17.0
 
-- `source_app_version`
-- `providerAppVersion`
-- `originAppVersion`
-- `app_version_string`
+v0.17.0 keeps the working ForceUpgrade UI filter and expands diagnostics around the outgoing request identity.
 
-alongside the existing app/client-version fields.
+It logs only:
 
-The Go Online log also records only app-version-related request fields at the final Foundation boundary.
+- non-sensitive header names related to app/client/device/version/build/OS identity
+- values only when they look like short version/build strings
+- JSON key paths whose names are version/device/build related
+- counts showing whether the raw body contains the old/new app version or continuous version
 
-It does not fake a successful HTTP status or local online state.
+Sensitive authentication, token, cookie, session, signature, UUID, user/driver ID and location names are excluded.
 
 ## Test
 
-Install **v0.16.0**, respring, fully kill Uber Driver, reopen it and press **Go Online once**.
+Install **v0.17.0**, respring, fully kill Uber Driver, reopen it and press **Go Online once**.
 
 Then send:
 
