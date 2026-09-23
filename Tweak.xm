@@ -786,8 +786,10 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
         wrapped = ^(NSData *data, NSURLResponse *response, NSError *error) {
             if (label.length) {
                 NSString *mime = response.MIMEType ?: @"";
-                UBDiagnostic([NSString stringWithFormat:@"%@ Foundation response bytes=%lu mime=%@ error=%d",
-                              label, (unsigned long)data.length, mime, error ? 1 : 0]);
+                NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class]
+                    ? ((NSHTTPURLResponse *)response).statusCode : 0;
+                UBDiagnostic([NSString stringWithFormat:@"%@ Foundation response status=%ld bytes=%lu mime=%@ error=%d",
+                              label, (long)status, (unsigned long)data.length, mime, error ? 1 : 0]);
 
                 if (data.length && data.length <= 2 * 1024 * 1024) {
                     NSString *text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
@@ -804,6 +806,28 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
             NSData *deliveredData = data;
             if (label.length && !error) {
                 deliveredData = UBFilterFoundationGoOnlineResponseData(data, label);
+
+                BOOL previousSkip = UBSkipJSONHooks;
+                UBSkipJSONHooks = YES;
+                id deliveredJSON = nil;
+                @try {
+                    deliveredJSON = [NSJSONSerialization JSONObjectWithData:deliveredData options:0 error:nil];
+                } @finally {
+                    UBSkipJSONHooks = previousSkip;
+                }
+
+                if ([deliveredJSON isKindOfClass:NSDictionary.class]) {
+                    NSArray *keys = [[(NSDictionary *)deliveredJSON allKeys] sortedArrayUsingSelector:@selector(compare:)];
+                    UBDiagnostic([NSString stringWithFormat:@"%@ delivered top-level keys=%@",
+                                  label, [keys componentsJoinedByString:@","]]);
+
+                    id dataObject = ((NSDictionary *)deliveredJSON)[@"data"];
+                    if ([dataObject isKindOfClass:NSDictionary.class]) {
+                        NSArray *dataKeys = [[(NSDictionary *)dataObject allKeys] sortedArrayUsingSelector:@selector(compare:)];
+                        UBDiagnostic([NSString stringWithFormat:@"%@ delivered data keys=%@",
+                                      label, [dataKeys componentsJoinedByString:@","]]);
+                    }
+                }
             }
             handler(deliveredData, response, error);
         };
@@ -1396,7 +1420,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.14.0 loaded; extended nested ForceUpgrade marker matching active");
+        UBDiagnostic(@"UberDriverBypass 0.15.0 loaded; Go Online response-shape diagnostics active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();
