@@ -295,8 +295,8 @@ static NSUInteger UBCountUTF8Occurrences(NSData *data, NSString *needleString) {
     NSData *needle = [needleString dataUsingEncoding:NSUTF8StringEncoding];
     if (!needle.length || needle.length > data.length) return 0;
 
-    const uint8_t *bytes = data.bytes;
-    const uint8_t *needleBytes = needle.bytes;
+    const uint8_t *bytes = (const uint8_t *)data.bytes;
+    const uint8_t *needleBytes = (const uint8_t *)needle.bytes;
     NSUInteger count = 0;
     for (NSUInteger i = 0; i + needle.length <= data.length; ) {
         if (memcmp(bytes + i, needleBytes, needle.length) == 0) {
