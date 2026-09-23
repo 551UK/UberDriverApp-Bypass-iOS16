@@ -1,26 +1,33 @@
 # UberDriverApp Bypass iOS 16
 
-Rootless diagnostic candidate **0.15.0** for Uber Driver **4.527.10000** on **iOS 16.2+**.
+Rootless compatibility candidate **0.16.0** for Uber Driver **4.527.10000** on **iOS 16.2+**.
 
-## What v0.14.0 proved
+## What v0.15.0 proved
 
-v0.14.0 successfully removes the ForceUpgrade issue from the live `/rt/drivers/v2/go-online` response, so the red update warning disappears.
+The live `/rt/drivers/v2/go-online` request receives **HTTP 423 Locked** from Uber's server.
 
-The driver still does not transition online. The next diagnostic question is what state the remaining filtered response represents.
+v0.14/v0.15 remove the ForceUpgrade issue from the JSON shown to the old app, which removes the red update warning, but that does not make the server accept the online transition.
 
-## v0.15.0
+## v0.16.0
 
-v0.15.0 keeps the v0.14 ForceUpgrade filter and adds:
+v0.16.0 keeps the working ForceUpgrade response filter but moves the compatibility work to the outgoing app identity.
 
-- HTTP status for the Go Online response
-- the top-level JSON keys delivered to the old app
-- the keys inside the response `data` object
+It expands app-version rewriting to include:
 
-It does not log response values, authentication headers, tokens, IDs, coordinates or query strings.
+- `source_app_version`
+- `providerAppVersion`
+- `originAppVersion`
+- `app_version_string`
+
+alongside the existing app/client-version fields.
+
+The Go Online log also records only app-version-related request fields at the final Foundation boundary.
+
+It does not fake a successful HTTP status or local online state.
 
 ## Test
 
-Install **v0.15.0**, respring, fully kill Uber Driver, reopen it and press **Go Online once**.
+Install **v0.16.0**, respring, fully kill Uber Driver, reopen it and press **Go Online once**.
 
 Then send:
 

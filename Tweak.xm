@@ -176,6 +176,8 @@ static id UBRewriteValueForKey(id value, NSString *key) {
     if ([@[@"xuberclientversion", @"xuberalsappversion", @"xuberappversion",
            @"xuberbuildversion", @"xuberclientbuild", @"xuberclientbuildnumber",
            @"appversion", @"clientversion", @"version",
+           @"sourceappversion", @"providerappversion", @"originappversion",
+           @"appversionstring", @"currentappversion", @"lastlaunchedappversion",
            @"cfbundleversion", @"cfbundleshortversionstring"] containsObject:k]) {
         if ([v containsString:UBOldAppVersion]) {
             return [v stringByReplacingOccurrencesOfString:UBOldAppVersion
@@ -183,7 +185,11 @@ static id UBRewriteValueForKey(id value, NSString *key) {
         }
         if ([k isEqualToString:@"xuberclientversion"] ||
             [k isEqualToString:@"xuberalsappversion"] ||
-            [k isEqualToString:@"xuberappversion"]) {
+            [k isEqualToString:@"xuberappversion"] ||
+            [k isEqualToString:@"sourceappversion"] ||
+            [k isEqualToString:@"providerappversion"] ||
+            [k isEqualToString:@"originappversion"] ||
+            [k isEqualToString:@"appversionstring"]) {
             // At the final network boundary these are application identity
             // headers, so use the comparison build even if an intermediate
             // layer formatted the old value differently.
@@ -193,6 +199,84 @@ static id UBRewriteValueForKey(id value, NSString *key) {
     if ([@[@"ubcontinuousversion", @"continuousversion"] containsObject:k] &&
         [v isEqualToString:@"273504.1"]) return UBTargetContinuousVersion;
     return value;
+}
+
+static BOOL UBIsVersionDiagnosticKey(NSString *key) {
+    NSString *k = UBNormalizedKey(key);
+    return [@[
+        @"xuberclientversion", @"xuberalsappversion", @"xuberappversion",
+        @"sourceappversion", @"providerappversion", @"originappversion",
+        @"appversionstring", @"appversion", @"clientversion",
+        @"currentappversion", @"lastlaunchedappversion",
+        @"continuousversion", @"ubcontinuousversion"
+    ] containsObject:k];
+}
+
+static void UBLogVersionJSONFields(id object, NSString *path, NSUInteger depth, NSUInteger *count) {
+    if (!object || depth > 10 || !count || *count >= 30) return;
+
+    if ([object isKindOfClass:NSDictionary.class]) {
+        NSDictionary *dictionary = (NSDictionary *)object;
+        for (id keyObject in dictionary) {
+            if (*count >= 30) break;
+            NSString *key = [keyObject isKindOfClass:NSString.class] ? keyObject : [keyObject description];
+            id value = dictionary[keyObject];
+            NSString *nextPath = path.length ? [path stringByAppendingFormat:@".%@", key] : key;
+
+            if (UBIsVersionDiagnosticKey(key) &&
+                ([value isKindOfClass:NSString.class] || [value isKindOfClass:NSNumber.class])) {
+                NSString *safeValue = [value description] ?: @"";
+                if (safeValue.length > 80) safeValue = [safeValue substringToIndex:80];
+                (*count)++;
+                UBDiagnostic([NSString stringWithFormat:@"go-online request version field %@=%@", nextPath, safeValue]);
+            }
+
+            UBLogVersionJSONFields(value, nextPath, depth + 1, count);
+        }
+        return;
+    }
+
+    if ([object isKindOfClass:NSArray.class]) {
+        NSArray *array = (NSArray *)object;
+        NSUInteger limit = MIN(array.count, (NSUInteger)30);
+        for (NSUInteger i = 0; i < limit && *count < 30; i++) {
+            UBLogVersionJSONFields(array[i],
+                [path stringByAppendingFormat:@"[%lu]", (unsigned long)i],
+                depth + 1, count);
+        }
+    }
+}
+
+static void UBDiagnoseGoOnlineVersionIdentity(NSURLRequest *request, NSData *body) {
+    if (!UBIsGoOnlinePath(request.URL)) return;
+
+    for (NSString *header in request.allHTTPHeaderFields) {
+        if (!UBIsVersionDiagnosticKey(header)) continue;
+        NSString *value = request.allHTTPHeaderFields[header] ?: @"";
+        if (value.length > 80) value = [value substringToIndex:80];
+        UBDiagnostic([NSString stringWithFormat:@"go-online request version header %@=%@", header, value]);
+    }
+
+    if (!body.length || [request valueForHTTPHeaderField:@"Content-Encoding"].length) return;
+
+    BOOL previousSkip = UBSkipJSONHooks;
+    UBSkipJSONHooks = YES;
+    id json = nil;
+    @try {
+        json = [NSJSONSerialization JSONObjectWithData:body options:0 error:nil];
+    } @finally {
+        UBSkipJSONHooks = previousSkip;
+    }
+
+    if (json) {
+        NSUInteger count = 0;
+        UBLogVersionJSONFields(json, @"$", 0, &count);
+        UBDiagnostic([NSString stringWithFormat:@"go-online request version fields logged=%lu bodyBytes=%lu",
+                      (unsigned long)count, (unsigned long)body.length]);
+    } else {
+        UBDiagnostic([NSString stringWithFormat:@"go-online request body non-JSON bytes=%lu",
+                      (unsigned long)body.length]);
+    }
 }
 
 static id UBRewriteJSON(id object, NSUInteger depth, NSUInteger *changes) {
@@ -650,6 +734,12 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
         NSString *label = UBTargetPathLabel(request.URL);
         if (label.length) UBDiagnostic([NSString stringWithFormat:@"%@ Foundation request updated", label]);
     }
+
+    if (UBIsGoOnlinePath(request.URL) && rewriteBody) {
+        NSURLRequest *finalRequest = changed ? copy : request;
+        UBDiagnoseGoOnlineVersionIdentity(finalRequest, finalRequest.HTTPBody);
+    }
+
     return changed ? copy : request;
 }
 
@@ -846,6 +936,7 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
     }
     NSMutableURLRequest *copy = [UBRewriteRequest(request, NO) mutableCopy];
     if (updated != body && ![updated isEqualToData:body]) [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
+    UBDiagnoseGoOnlineVersionIdentity(copy, updated);
     return %orig(copy, updated);
 }
 - (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromData:(NSData *)body completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))handler {
@@ -859,6 +950,7 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
     }
     NSMutableURLRequest *copy = [UBRewriteRequest(request, NO) mutableCopy];
     if (updated != body && ![updated isEqualToData:body]) [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
+    UBDiagnoseGoOnlineVersionIdentity(copy, updated);
     return %orig(copy, updated, handler);
 }
 %end
@@ -1420,7 +1512,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.15.0 loaded; Go Online response-shape diagnostics active");
+        UBDiagnostic(@"UberDriverBypass 0.16.0 loaded; expanded request version identity compatibility active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();
