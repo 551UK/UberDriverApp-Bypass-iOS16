@@ -348,11 +348,96 @@ static void UBLogVersionishJSONPaths(id object, NSString *path, NSUInteger depth
     }
 }
 
+static BOOL UBIsSafeCompatibilityField(NSString *key) {
+    NSString *k = UBNormalizedKey(key ?: @"");
+    return [@[
+        @"sourceapp", @"specversion", @"version", @"appvariant",
+        @"builduuid", @"buildtype", @"commithash", @"osversion",
+        @"deviceosname", @"deviceosversion", @"versionchecksum", @"envchecksum"
+    ] containsObject:k];
+}
+
+static BOOL UBLooksUUIDString(NSString *value) {
+    if (![value isKindOfClass:NSString.class] || value.length != 36) return NO;
+    return [value characterAtIndex:8] == '-' &&
+           [value characterAtIndex:13] == '-' &&
+           [value characterAtIndex:18] == '-' &&
+           [value characterAtIndex:23] == '-';
+}
+
+static BOOL UBLooksHexString(NSString *value) {
+    if (![value isKindOfClass:NSString.class] || !value.length) return NO;
+    NSCharacterSet *hex = [NSCharacterSet characterSetWithCharactersInString:@"0123456789abcdefABCDEF"];
+    return [[value stringByTrimmingCharactersInSet:hex] length] == 0;
+}
+
+static void UBLogSafeCompatibilityJSONFields(id object, NSString *path, NSUInteger depth, NSUInteger *count) {
+    if (!object || depth > 12 || !count || *count >= 40) return;
+
+    if ([object isKindOfClass:NSDictionary.class]) {
+        NSDictionary *dictionary = (NSDictionary *)object;
+        for (id keyObject in dictionary) {
+            if (*count >= 40) break;
+            NSString *key = [keyObject isKindOfClass:NSString.class] ? keyObject : [keyObject description];
+            id value = dictionary[keyObject];
+            NSString *nextPath = path.length ? [path stringByAppendingFormat:@".%@", key] : key;
+
+            if (UBIsSafeCompatibilityField(key)) {
+                NSString *normalized = UBNormalizedKey(key);
+                (*count)++;
+
+                if ([normalized isEqualToString:@"versionchecksum"] ||
+                    [normalized isEqualToString:@"envchecksum"]) {
+                    NSString *s = [value isKindOfClass:NSString.class] ? value : nil;
+                    NSString *format = @"other";
+                    if (UBLooksUUIDString(s)) format = @"uuid";
+                    else if (UBLooksHexString(s)) format = @"hex";
+                    UBDiagnostic([NSString stringWithFormat:
+                        @"go-online compatibility field %@ type=%@ length=%lu format=%@",
+                        nextPath, NSStringFromClass([value class]),
+                        (unsigned long)(s ? s.length : 0), format]);
+                } else if ([value isKindOfClass:NSString.class] ||
+                           [value isKindOfClass:NSNumber.class]) {
+                    NSString *safeValue = [value description] ?: @"";
+                    if (safeValue.length > 100) safeValue = [safeValue substringToIndex:100];
+                    UBDiagnostic([NSString stringWithFormat:
+                        @"go-online compatibility field %@=%@", nextPath, safeValue]);
+                } else {
+                    UBDiagnostic([NSString stringWithFormat:
+                        @"go-online compatibility field %@ type=%@",
+                        nextPath, NSStringFromClass([value class])]);
+                }
+            }
+
+            UBLogSafeCompatibilityJSONFields(value, nextPath, depth + 1, count);
+        }
+        return;
+    }
+
+    if ([object isKindOfClass:NSArray.class]) {
+        NSArray *array = (NSArray *)object;
+        NSUInteger limit = MIN(array.count, (NSUInteger)40);
+        for (NSUInteger i = 0; i < limit && *count < 40; i++) {
+            UBLogSafeCompatibilityJSONFields(array[i],
+                [path stringByAppendingFormat:@"[%lu]", (unsigned long)i],
+                depth + 1, count);
+        }
+    }
+}
+
 static void UBDiagnoseGoOnlineVersionIdentity(NSURLRequest *request, NSData *body) {
     if (!UBIsGoOnlinePath(request.URL)) return;
 
     for (NSString *header in request.allHTTPHeaderFields) {
         NSString *value = request.allHTTPHeaderFields[header] ?: @"";
+        NSString *normalizedHeader = UBNormalizedKey(header);
+
+        if ([@[@"xuberclientname", @"xuberclientid", @"xuberdevice",
+               @"xuberdeviceos", @"xuberdeviceosbuild", @"xuberclientversion"]
+             containsObject:normalizedHeader]) {
+            NSString *safeValue = value.length > 100 ? [value substringToIndex:100] : value;
+            UBDiagnostic([NSString stringWithFormat:@"go-online compatibility header %@=%@", header, safeValue]);
+        }
 
         if (UBIsVersionDiagnosticKey(header)) {
             NSString *safeValue = value.length > 80 ? [value substringToIndex:80] : value;
@@ -409,6 +494,11 @@ static void UBDiagnoseGoOnlineVersionIdentity(NSURLRequest *request, NSData *bod
         UBLogVersionishJSONPaths(json, @"$", 0, &identityCount);
         UBDiagnostic([NSString stringWithFormat:@"go-online identity JSON paths logged=%lu",
                       (unsigned long)identityCount]);
+
+        NSUInteger compatibilityCount = 0;
+        UBLogSafeCompatibilityJSONFields(json, @"$", 0, &compatibilityCount);
+        UBDiagnostic([NSString stringWithFormat:@"go-online compatibility fields logged=%lu",
+                      (unsigned long)compatibilityCount]);
     } else {
         UBDiagnostic([NSString stringWithFormat:@"go-online request body non-JSON bytes=%lu",
                       (unsigned long)body.length]);
@@ -1648,7 +1738,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.17.0 loaded; expanded Go Online identity diagnostics active");
+        UBDiagnostic(@"UberDriverBypass 0.18.0 loaded; safe Go Online compatibility diagnostics active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();

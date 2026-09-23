@@ -24,7 +24,7 @@ jobs:
         if: runner.os == 'macOS'
         run: python3 tests/test_metadata.py
 
-      - name: Validate v0.17 request identity diagnostics
+      - name: Validate v0.18 compatibility diagnostics
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -51,7 +51,7 @@ jobs:
           test -n "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
           test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64"
-          test "$(dpkg-deb -f "$deb" Version)" = "0.17.0"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.18.0"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/uberdriver-check"
           dylib="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.dylib"
           filter="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.plist"
@@ -67,16 +67,16 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: ncipollo/release-action@v1
         with:
-          tag: v0.17.0
-          name: UberDriverApp Bypass iOS 16 v0.17.0
+          tag: v0.18.0
+          name: UberDriverApp Bypass iOS 16 v0.18.0
           body: |
-            Expanded Go Online identity diagnostic build for Uber Driver 4.527.10000.
+            Safe Go Online compatibility diagnostic build for Uber Driver 4.527.10000.
 
-            v0.16.0 proves x-uber-client-version is already 4.584.10000 at the Foundation network boundary, while the server still returns HTTP 423 with the same ForceUpgrade issue. Its JSON body contains none of the known version keys, so v0.17.0 keeps the existing compatibility/filter behavior and broadens diagnostics only.
+            v0.17.0 proves the ordinary version identity is already rewritten at the network boundary: iOS 18.0, OS build 22A3354, x-uber-client-version 4.584.10000 and request.deviceData.version 4.584.10000. Uber still returns HTTP 423 with a ForceUpgrade issue.
 
-            For the Go Online request it logs non-sensitive version/device/build-related header names, version-like JSON key paths, and occurrence counts for the old/new app and continuous-version strings in the raw body. Sensitive names such as authorization, token, cookie, session, signature, UUID, user/driver IDs and location fields are explicitly excluded.
+            v0.18.0 does not modify checksum or integrity fields. It logs only non-sensitive compatibility values such as sourceApp, specVersion, app variant, build UUID/type, commit hash, OS fields and client name/ID. For versionChecksum and envChecksum it logs only type, length and format, not the value.
 
-            Install v0.17.0, respring, fully kill Uber Driver, reopen it and press Go Online once. Then send Documents/UberDriverBypass.log.
+            Install v0.18.0, respring, fully kill Uber Driver, reopen it and press Go Online once. Then send Documents/UberDriverBypass.log.
 
           artifacts: packages/*.deb
           artifactErrorsFailBuild: true
