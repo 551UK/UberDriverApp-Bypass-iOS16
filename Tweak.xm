@@ -201,6 +201,8 @@ static id UBRewriteValueForKey(id value, NSString *key) {
     return value;
 }
 
+static BOOL UBIsGoOnlinePath(NSURL *url);
+
 static BOOL UBIsVersionDiagnosticKey(NSString *key) {
     NSString *k = UBNormalizedKey(key);
     return [@[
