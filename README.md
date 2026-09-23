@@ -1,49 +1,27 @@
 # UberDriverApp Bypass iOS 16
 
-Rootless compatibility candidate **0.14.0** for Uber Driver **4.527.10000** on **iOS 16.2+**.
+Rootless diagnostic candidate **0.15.0** for Uber Driver **4.527.10000** on **iOS 16.2+**.
 
-## What v0.13.0 proved
+## What v0.14.0 proved
 
-The live Go Online response still reaches:
+v0.14.0 successfully removes the ForceUpgrade issue from the live `/rt/drivers/v2/go-online` response, so the red update warning disappears.
 
-`$.data.issues[0].data.subtypeString`
+The driver still does not transition online. The next diagnostic question is what state the remaining filtered response represents.
 
-but v0.13.0 reports that the parent issue is not removable.
+## v0.15.0
 
-That means the nested subtype is a longer ForceUpgrade/min-version style identifier rather than one of the short exact marker strings previously accepted.
+v0.15.0 keeps the v0.14 ForceUpgrade filter and adds:
 
-## v0.14.0
+- HTTP status for the Go Online response
+- the top-level JSON keys delivered to the old app
+- the keys inside the response `data` object
 
-v0.14.0 keeps the filter scoped to the already-confirmed nested `issue.data` object.
-
-Within only these fields:
-
-- `typeString`
-- `subtypeString`
-- `issueType`
-- `type`
-- `subtype`
-
-the matcher now accepts either the existing exact ForceUpgrade marker or a normalized value containing:
-
-- `forceupgrade`
-- `forceappupgrade`
-- `minversion`
-
-The parent issue is then removed before Uber receives the Go Online JSON.
-
-Other issue entries and required actions remain unchanged.
-
-A regression test covers the nested live-response shape.
+It does not log response values, authentication headers, tokens, IDs, coordinates or query strings.
 
 ## Test
 
-Install **v0.14.0**, respring, fully kill Uber Driver, reopen it and press **Go Online once**.
+Install **v0.15.0**, respring, fully kill Uber Driver, reopen it and press **Go Online once**.
 
-A successful match should log:
-
-`go-online Foundation response force-upgrade entries removed=`
-
-If the update requirement still appears, send:
+Then send:
 
 `Documents/UberDriverBypass.log`
