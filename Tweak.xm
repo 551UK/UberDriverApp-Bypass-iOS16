@@ -918,6 +918,68 @@ static NSData *UBRewriteBody(NSData *body) {
     return encoded;
 }
 
+static NSData *UBStripGoOnlineChecksumFields(NSData *body, NSUInteger *removedOut) {
+    if (removedOut) *removedOut = 0;
+    if (!body.length || body.length > 2 * 1024 * 1024) return body;
+
+    BOOL previousSkip = UBSkipJSONHooks;
+    UBSkipJSONHooks = YES;
+
+    NSData *encoded = nil;
+    NSUInteger removed = 0;
+
+    @try {
+        id json = [NSJSONSerialization JSONObjectWithData:body options:0 error:nil];
+        if ([json isKindOfClass:NSDictionary.class]) {
+            NSDictionary *root = (NSDictionary *)json;
+            id requestObject = root[@"request"];
+
+            if ([requestObject isKindOfClass:NSDictionary.class]) {
+                NSDictionary *requestDictionary = (NSDictionary *)requestObject;
+                id deviceObject = requestDictionary[@"deviceData"];
+
+                if ([deviceObject isKindOfClass:NSDictionary.class]) {
+                    NSMutableDictionary *deviceData = [(NSDictionary *)deviceObject mutableCopy];
+
+                    for (NSString *key in @[@"versionChecksum", @"envChecksum"]) {
+                        if (deviceData[key] != nil) {
+                            [deviceData removeObjectForKey:key];
+                            removed++;
+                        }
+                    }
+
+                    if (removed) {
+                        NSMutableDictionary *requestCopy = [requestDictionary mutableCopy];
+                        requestCopy[@"deviceData"] = deviceData;
+
+                        NSMutableDictionary *rootCopy = [root mutableCopy];
+                        rootCopy[@"request"] = requestCopy;
+
+                        if ([NSJSONSerialization isValidJSONObject:rootCopy]) {
+                            encoded = [NSJSONSerialization dataWithJSONObject:rootCopy options:0 error:nil];
+                        }
+                    }
+                }
+            }
+        }
+    } @finally {
+        UBSkipJSONHooks = previousSkip;
+    }
+
+    if (removedOut) *removedOut = removed;
+
+    if (removed && encoded.length) {
+        UBDiagnostic([NSString stringWithFormat:
+            @"go-online request checksum fields removed=%lu bytes=%lu->%lu",
+            (unsigned long)removed,
+            (unsigned long)body.length,
+            (unsigned long)encoded.length]);
+        return encoded;
+    }
+
+    return body;
+}
+
 static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
     if (!UBIsUberURL(request.URL)) return request;
 
@@ -945,6 +1007,10 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
         NSData *after = UBRewriteBody(before);
         if (after == before && before.length) {
             after = UBRewriteOpaqueDeviceIdentityData(before);
+        }
+        if (UBIsGoOnlinePath(request.URL) && after.length) {
+            NSUInteger checksumFieldsRemoved = 0;
+            after = UBStripGoOnlineChecksumFields(after, &checksumFieldsRemoved);
         }
         if (after != before && ![after isEqualToData:before]) {
             copy.HTTPBody = after;
@@ -1160,6 +1226,10 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
                           UBTargetPathLabel(request.URL)]);
         }
     }
+    if (UBIsGoOnlinePath(request.URL) && updated.length) {
+        NSUInteger checksumFieldsRemoved = 0;
+        updated = UBStripGoOnlineChecksumFields(updated, &checksumFieldsRemoved);
+    }
     NSMutableURLRequest *copy = [UBRewriteRequest(request, NO) mutableCopy];
     if (updated != body && ![updated isEqualToData:body]) [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
     UBDiagnoseGoOnlineVersionIdentity(copy, updated);
@@ -1173,6 +1243,10 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
             UBDiagnostic([NSString stringWithFormat:@"%@ NSURLSession upload body compatibility bytes rewritten",
                           UBTargetPathLabel(request.URL)]);
         }
+    }
+    if (UBIsGoOnlinePath(request.URL) && updated.length) {
+        NSUInteger checksumFieldsRemoved = 0;
+        updated = UBStripGoOnlineChecksumFields(updated, &checksumFieldsRemoved);
     }
     NSMutableURLRequest *copy = [UBRewriteRequest(request, NO) mutableCopy];
     if (updated != body && ![updated isEqualToData:body]) [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
@@ -1259,6 +1333,10 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
     NSData *updated = UBIsUberURL(self.URL) && ![self valueForHTTPHeaderField:@"Content-Encoding"].length ? UBRewriteBody(body) : body;
     if (UBIsUberURL(self.URL) && updated == body && body.length) {
         updated = UBRewriteOpaqueDeviceIdentityData(body);
+    }
+    if (UBIsGoOnlinePath(self.URL) && updated.length) {
+        NSUInteger checksumFieldsRemoved = 0;
+        updated = UBStripGoOnlineChecksumFields(updated, &checksumFieldsRemoved);
     }
     if (updated != body && ![updated isEqualToData:body] && UBIsGoOnlinePath(self.URL)) {
         UBDiagnostic([NSString stringWithFormat:@"%@ NSMutableURLRequest body compatibility bytes rewritten",
@@ -1738,7 +1816,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.18.0 loaded; safe Go Online compatibility diagnostics active");
+        UBDiagnostic(@"UberDriverBypass 0.19.0 loaded; Go Online checksum-field test active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();
