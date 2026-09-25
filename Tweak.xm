@@ -11,12 +11,12 @@
 #import <dlfcn.h>
 #import <strings.h>
 
-static NSString * const UBTargetOSVersion = @"18.0";
-static NSString * const UBTargetOSLongVersion = @"18.0.0";
-static NSString * const UBTargetOSMajor = @"18";
-static NSString * const UBTargetOSBuild = @"22A3354";
+static NSString * const UBTargetOSVersion = @"17.0";
+static NSString * const UBTargetOSLongVersion = @"17.0.0";
+static NSString * const UBTargetOSMajor = @"17";
+static NSString * const UBTargetOSBuild = @"21A329";
 static NSString * const UBOldAppVersion = @"4.527.10000";
-static NSString * const UBTargetAppVersion = @"4.585.10000";
+static NSString * const UBTargetAppVersion = @"4.584.10000";
 static NSString * const UBOldContinuousVersion = @"273504.1";
 static NSString * const UBTargetContinuousVersion = @"326106.1";
 static NSString * const UBTargetBuildUUID = @"7a058960-ab07-11f1-8af6-ebef13f4ae76";
@@ -1658,20 +1658,20 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
 
 %hook NSProcessInfo
 - (NSString *)operatingSystemVersionString {
-    return @"Version 18.0 (Build 22A3354)";
+    return @"Version 17.0 (Build 21A329)";
 }
 
 - (NSOperatingSystemVersion)operatingSystemVersion {
     NSOperatingSystemVersion version;
-    version.majorVersion = 18;
+    version.majorVersion = 17;
     version.minorVersion = 0;
     version.patchVersion = 0;
     return version;
 }
 
 - (BOOL)isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion)version {
-    if (version.majorVersion < 18) return YES;
-    if (version.majorVersion > 18) return NO;
+    if (version.majorVersion < 17) return YES;
+    if (version.majorVersion > 17) return NO;
     if (version.minorVersion < 0) return YES;
     if (version.minorVersion > 0) return NO;
     return version.patchVersion <= 0;
@@ -2207,7 +2207,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.24.0 loaded; integrity-token structure diagnostics active");
+        UBDiagnostic(@"UberDriverBypass 0.25.0 loaded; known-working metadata profile active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();
