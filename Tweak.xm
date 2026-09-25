@@ -922,68 +922,6 @@ static NSData *UBRewriteBody(NSData *body) {
     return encoded;
 }
 
-static NSData *UBStripGoOnlineChecksumFields(NSData *body, NSUInteger *removedOut) {
-    if (removedOut) *removedOut = 0;
-    if (!body.length || body.length > 2 * 1024 * 1024) return body;
-
-    BOOL previousSkip = UBSkipJSONHooks;
-    UBSkipJSONHooks = YES;
-
-    NSData *encoded = nil;
-    NSUInteger removed = 0;
-
-    @try {
-        id json = [NSJSONSerialization JSONObjectWithData:body options:0 error:nil];
-        if ([json isKindOfClass:NSDictionary.class]) {
-            NSDictionary *root = (NSDictionary *)json;
-            id requestObject = root[@"request"];
-
-            if ([requestObject isKindOfClass:NSDictionary.class]) {
-                NSDictionary *requestDictionary = (NSDictionary *)requestObject;
-                id deviceObject = requestDictionary[@"deviceData"];
-
-                if ([deviceObject isKindOfClass:NSDictionary.class]) {
-                    NSMutableDictionary *deviceData = [(NSDictionary *)deviceObject mutableCopy];
-
-                    for (NSString *key in @[@"versionChecksum", @"envChecksum"]) {
-                        if (deviceData[key] != nil) {
-                            [deviceData removeObjectForKey:key];
-                            removed++;
-                        }
-                    }
-
-                    if (removed) {
-                        NSMutableDictionary *requestCopy = [requestDictionary mutableCopy];
-                        requestCopy[@"deviceData"] = deviceData;
-
-                        NSMutableDictionary *rootCopy = [root mutableCopy];
-                        rootCopy[@"request"] = requestCopy;
-
-                        if ([NSJSONSerialization isValidJSONObject:rootCopy]) {
-                            encoded = [NSJSONSerialization dataWithJSONObject:rootCopy options:0 error:nil];
-                        }
-                    }
-                }
-            }
-        }
-    } @finally {
-        UBSkipJSONHooks = previousSkip;
-    }
-
-    if (removedOut) *removedOut = removed;
-
-    if (removed && encoded.length) {
-        UBDiagnostic([NSString stringWithFormat:
-            @"go-online request checksum fields removed=%lu bytes=%lu->%lu",
-            (unsigned long)removed,
-            (unsigned long)body.length,
-            (unsigned long)encoded.length]);
-        return encoded;
-    }
-
-    return body;
-}
-
 static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
     if (!UBIsUberURL(request.URL)) return request;
 
