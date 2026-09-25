@@ -24,7 +24,7 @@ jobs:
         if: runner.os == 'macOS'
         run: python3 tests/test_metadata.py
 
-      - name: Validate v0.23 attestation diagnostics
+      - name: Validate v0.24 integrity-token diagnostics
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -37,12 +37,14 @@ jobs:
           grep -q '@"versionchecksum", @"envchecksum"' Tweak.xm
           grep -q '@"envid"' Tweak.xm
           grep -q 'format=%@ value=%@' Tweak.xm
-          grep -q 'device attestation diagnostics active' Tweak.xm
+          grep -q 'integrity-token structure diagnostics active' Tweak.xm
           grep -q 'go-online deviceData inventory count=' Tweak.xm
           grep -q 'go-online blocker detail' Tweak.xm
           grep -q 'UBAttestationPathLabel' Tweak.xm
           grep -q 'attestation JSON keys path=' Tweak.xm
           grep -q 'devices-results' Tweak.xm
+          grep -q 'UBInspectIntegrityToken' Tweak.xm
+          grep -q 'integrity-token %@ length=' Tweak.xm
 
       - name: Set up Theos
         uses: Randomblock1/theos-action@v1
@@ -61,7 +63,7 @@ jobs:
           test -n "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
           test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64"
-          test "$(dpkg-deb -f "$deb" Version)" = "0.23.0"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.24.0"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/uberdriver-check"
           dylib="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.dylib"
           filter="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.plist"
@@ -77,16 +79,16 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: ncipollo/release-action@v1
         with:
-          tag: v0.23.0
-          name: UberDriverApp Bypass iOS 16 v0.23.0
+          tag: v0.24.0
+          name: UberDriverApp Bypass iOS 16 v0.24.0
           body: |
-            Device attestation diagnostic build for Uber Driver 4.527.10000.
+            Integrity-token structure diagnostic build for Uber Driver 4.527.10000.
 
-            v0.22.0 identified the server-side Go Online blocker as Driver Checks type ATTESTATION with subtype APP_FORCE_UPGRADE. The normal client version and OS values are already rewritten to the current comparison identity.
+            v0.23.0 showed that the device attestation flow completes successfully and returns UPSERT_STATUS_COMPLETE plus a fresh clientIntegrityToken, but Go Online still receives ATTESTATION / APP_FORCE_UPGRADE.
 
-            v0.23.0 keeps request behavior unchanged and instruments the /rt/devices/task, /rt/devices/results and /rt/devices/exemption flow. It records response status, JSON structure and safe decision/status/type fields while redacting tokens, signatures, challenges, device/account IDs and location data.
+            v0.24.0 keeps request behavior unchanged. It inspects clientIntegrityToken only in memory and logs its format, segment count, decoded JSON key names, and a small allowlist of non-sensitive app/version/platform claims. The raw token, signatures, nonces, IDs and credentials are never written to the log.
 
-            Install v0.23.0, respring, fully kill Uber Driver, reopen it and press Go Online once. Then send Documents/UberDriverBypass.log.
+            Install v0.24.0, respring, fully kill Uber Driver, reopen it, wait a few seconds and press Go Online once. Then send Documents/UberDriverBypass.log.
 
           artifacts: packages/*.deb
           artifactErrorsFailBuild: true
