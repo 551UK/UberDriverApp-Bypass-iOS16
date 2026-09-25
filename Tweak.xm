@@ -11,10 +11,10 @@
 #import <dlfcn.h>
 #import <strings.h>
 
-static NSString * const UBTargetOSVersion = @"18.5";
-static NSString * const UBTargetOSLongVersion = @"18.5.0";
-static NSString * const UBTargetOSMajor = @"17";
-static NSString * const UBTargetOSBuild = @"22F76";
+static NSString * const UBTargetOSVersion = @"18.4";
+static NSString * const UBTargetOSLongVersion = @"18.4.0";
+static NSString * const UBTargetOSMajor = @"18";
+static NSString * const UBTargetOSBuild = @"22E240";
 static NSString * const UBOldAppVersion = @"4.527.10000";
 static NSString * const UBTargetAppVersion = @"4.585.10000";
 static NSString * const UBOldContinuousVersion = @"273504.1";
@@ -1670,24 +1670,24 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
 %hook NSProcessInfo
 - (NSString *)operatingSystemVersionString {
     if (UBReferenceCaptureMode) return %orig;
-    return @"Version 17.0 (Build 21A329)";
+    return @"Version 18.4 (Build 22E240)";
 }
 
 - (NSOperatingSystemVersion)operatingSystemVersion {
     if (UBReferenceCaptureMode) return %orig;
     NSOperatingSystemVersion version;
-    version.majorVersion = 17;
-    version.minorVersion = 0;
+    version.majorVersion = 18;
+    version.minorVersion = 4;
     version.patchVersion = 0;
     return version;
 }
 
 - (BOOL)isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion)version {
     if (UBReferenceCaptureMode) return %orig(version);
-    if (version.majorVersion < 17) return YES;
-    if (version.majorVersion > 17) return NO;
-    if (version.minorVersion < 0) return YES;
-    if (version.minorVersion > 0) return NO;
+    if (version.majorVersion < 18) return YES;
+    if (version.majorVersion > 18) return NO;
+    if (version.minorVersion < 4) return YES;
+    if (version.minorVersion > 4) return NO;
     return version.patchVersion <= 0;
 }
 %end
@@ -2210,13 +2210,13 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
     if (UBReferenceCaptureMode) return UBOrigSysctlByName(name, oldp, oldlenp, newp, newlen);
     if (name && !newp) {
         if (strcmp(name, "kern.osproductversion") == 0) {
-            return UBCopySysctlString("18.5", oldp, oldlenp);
+            return UBCopySysctlString("18.4", oldp, oldlenp);
         }
         if (strcmp(name, "kern.osversion") == 0) {
-            return UBCopySysctlString("22F76", oldp, oldlenp);
+            return UBCopySysctlString("22E240", oldp, oldlenp);
         }
         if (strcmp(name, "kern.osrelease") == 0) {
-            return UBCopySysctlString("24.5.0", oldp, oldlenp);
+            return UBCopySysctlString("24.4.0", oldp, oldlenp);
         }
     }
     return UBOrigSysctlByName(name, oldp, oldlenp, newp, newlen);
@@ -2241,9 +2241,10 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
         UBDiagnostic([NSString stringWithFormat:
-            @"UberDriverBypass 0.30.0 loaded; mode=%@ actualApp=%@ actualOS=%@ targetApp=%@",
+            @"UberDriverBypass 0.31.0 loaded; mode=%@ actualApp=%@ actualOS=%@ targetApp=%@ targetOS=%@ targetBuild=%@",
             UBReferenceCaptureMode ? @"REFERENCE_CAPTURE" : @"COMPATIBILITY_TEST",
-            UBActualAppVersion ?: @"", UBActualOSVersion ?: @"", UBTargetAppVersion]);
+            UBActualAppVersion ?: @"", UBActualOSVersion ?: @"", UBTargetAppVersion,
+            UBTargetOSVersion, UBTargetOSBuild]);
         UBInstallNativeCronetHooks();
 
         // Newer Uber builds may load Cronet after tweak construction. Retry
