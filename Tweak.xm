@@ -2267,18 +2267,19 @@ static CFTypeRef (*UBOrigCFBundleGetValueForInfoDictionaryKey)(CFBundleRef bundl
 static CFTypeRef UBHookCFBundleGetValueForInfoDictionaryKey(CFBundleRef bundle, CFStringRef key) {
     if (UBReferenceCaptureMode) return UBOrigCFBundleGetValueForInfoDictionaryKey(bundle, key);
     if (bundle == CFBundleGetMainBundle() && key && CFGetTypeID(key) == CFStringGetTypeID()) {
-        if (CFEqual(key, CFSTR("CFBundleShortVersionString")) || CFEqual(key, CFSTR("CFBundleVersion"))) {
-            return CFSTR("4.585.10000");
-        }
-        if (CFEqual(key, CFSTR("MinimumOSVersion"))) {
-            return CFSTR("18.0");
-        }
-        if (CFEqual(key, CFSTR("UBContinuousVersion"))) {
-            return CFSTR("326106.1");
-        }
-        if (CFEqual(key, CFSTR("UBBuildUUID"))) {
-            return CFSTR("7a058960-ab07-11f1-8af6-ebef13f4ae76");
-        }
+        if (CFEqual(key, CFSTR("CFBundleShortVersionString")) || CFEqual(key, CFSTR("CFBundleVersion"))) return CFSTR("4.584.10000");
+        if (CFEqual(key, CFSTR("MinimumOSVersion"))) return CFSTR("17.0");
+        if (CFEqual(key, CFSTR("UBContinuousVersion"))) return CFSTR("326106.1");
+        if (CFEqual(key, CFSTR("UBBuildUUID"))) return CFSTR("7a058960-ab07-11f1-8af6-ebef13f4ae76");
+        if (CFEqual(key, CFSTR("UBCommitHash"))) return CFSTR("680f857102b76e94232b9339fd324673f8849b1b");
+        if (CFEqual(key, CFSTR("BuildMachineOSBuild"))) return CFSTR("25E253");
+        if (CFEqual(key, CFSTR("DTPlatformBuild"))) return CFSTR("23F73");
+        if (CFEqual(key, CFSTR("DTPlatformVersion"))) return CFSTR("26.5");
+        if (CFEqual(key, CFSTR("DTSDKBuild"))) return CFSTR("23F73");
+        if (CFEqual(key, CFSTR("DTSDKName"))) return CFSTR("iphoneos26.5");
+        if (CFEqual(key, CFSTR("DTXcode"))) return CFSTR("2650");
+        if (CFEqual(key, CFSTR("DTXcodeBuild"))) return CFSTR("17F42");
+        if (CFEqual(key, CFSTR("DTAppStoreToolsBuild"))) return CFSTR("17F106");
     }
     return UBOrigCFBundleGetValueForInfoDictionaryKey(bundle, key);
 }
