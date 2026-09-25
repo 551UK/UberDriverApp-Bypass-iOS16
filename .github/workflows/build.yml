@@ -24,7 +24,7 @@ jobs:
         if: runner.os == 'macOS'
         run: python3 tests/test_metadata.py
 
-      - name: Validate v0.20 current-version test
+      - name: Validate v0.21 deviceData inventory
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -33,9 +33,11 @@ jobs:
           grep -q 'containsString:@"forceappupgrade"' Tweak.xm
           grep -q 'containsString:@"minversion"' Tweak.xm
           grep -q 'delivered top-level keys' Tweak.xm
-          grep -q 'UBStripGoOnlineChecksumFields' Tweak.xm
-          grep -q 'versionChecksum' Tweak.xm
-          grep -q 'envChecksum' Tweak.xm
+          ! grep -q 'UBStripGoOnlineChecksumFields' Tweak.xm
+          grep -q '@"versionchecksum", @"envchecksum"' Tweak.xm
+          grep -q '@"envid"' Tweak.xm
+          grep -q 'format=%@ value=%@' Tweak.xm
+          grep -q 'Go Online deviceData inventory active' Tweak.xm
 
       - name: Set up Theos
         uses: Randomblock1/theos-action@v1
@@ -54,7 +56,7 @@ jobs:
           test -n "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
           test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64"
-          test "$(dpkg-deb -f "$deb" Version)" = "0.20.0"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.21.0"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/uberdriver-check"
           dylib="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.dylib"
           filter="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.plist"
@@ -70,16 +72,16 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: ncipollo/release-action@v1
         with:
-          tag: v0.20.0
-          name: UberDriverApp Bypass iOS 16 v0.20.0
+          tag: v0.21.0
+          name: UberDriverApp Bypass iOS 16 v0.21.0
           body: |
-            Current App Store version A/B test for Uber Driver 4.527.10000.
+            Go Online deviceData compatibility inventory build for Uber Driver 4.527.10000.
 
-            v0.19.0 successfully removed request.deviceData.versionChecksum and envChecksum but the server still returned HTTP 423 ForceUpgrade.
+            v0.20.0 confirmed the current App Store identity 4.585.10000 still receives HTTP 423 ForceUpgrade. v0.21.0 stops removing versionChecksum and envChecksum so the original values reach the request again, and expands safe deviceData diagnostics to show the compatibility fields being sent.
 
-            v0.20.0 changes only the spoofed app version from 4.584.10000 to the current App Store version 4.585.10000. The checksum-removal behavior stays unchanged so this isolates whether Uber raised the Go Online minimum version after 4.584.10000.
+            This build is diagnostic: it is intended to identify the remaining server-side compatibility signal rather than mask the HTTP 423 response locally.
 
-            Install v0.20.0, respring, fully kill Uber Driver, reopen it and press Go Online once. Then send Documents/UberDriverBypass.log.
+            Install v0.21.0, respring, fully kill Uber Driver, reopen it and press Go Online once. Then send Documents/UberDriverBypass.log.
 
           artifacts: packages/*.deb
           artifactErrorsFailBuild: true
