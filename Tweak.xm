@@ -11,12 +11,12 @@
 #import <dlfcn.h>
 #import <strings.h>
 
-static NSString * const UBTargetOSVersion = @"17.0";
-static NSString * const UBTargetOSLongVersion = @"17.0.0";
+static NSString * const UBTargetOSVersion = @"18.5";
+static NSString * const UBTargetOSLongVersion = @"18.5.0";
 static NSString * const UBTargetOSMajor = @"17";
-static NSString * const UBTargetOSBuild = @"21A329";
+static NSString * const UBTargetOSBuild = @"22F76";
 static NSString * const UBOldAppVersion = @"4.527.10000";
-static NSString * const UBTargetAppVersion = @"4.584.10000";
+static NSString * const UBTargetAppVersion = @"4.585.10000";
 static NSString * const UBOldContinuousVersion = @"273504.1";
 static NSString * const UBTargetContinuousVersion = @"326106.1";
 static NSString * const UBTargetBuildUUID = @"7a058960-ab07-11f1-8af6-ebef13f4ae76";
@@ -2167,7 +2167,7 @@ static CFTypeRef UBHookCFBundleGetValueForInfoDictionaryKey(CFBundleRef bundle, 
     if (UBReferenceCaptureMode) return UBOrigCFBundleGetValueForInfoDictionaryKey(bundle, key);
     if (bundle == CFBundleGetMainBundle() && key && CFGetTypeID(key) == CFStringGetTypeID()) {
         if (CFEqual(key, CFSTR("CFBundleShortVersionString")) || CFEqual(key, CFSTR("CFBundleVersion"))) {
-            return CFSTR("4.584.10000");
+            return CFSTR("4.585.10000");
         }
         if (CFEqual(key, CFSTR("MinimumOSVersion"))) {
             return CFSTR("18.0");
@@ -2210,13 +2210,13 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
     if (UBReferenceCaptureMode) return UBOrigSysctlByName(name, oldp, oldlenp, newp, newlen);
     if (name && !newp) {
         if (strcmp(name, "kern.osproductversion") == 0) {
-            return UBCopySysctlString("18.0", oldp, oldlenp);
+            return UBCopySysctlString("18.5", oldp, oldlenp);
         }
         if (strcmp(name, "kern.osversion") == 0) {
-            return UBCopySysctlString("22A3354", oldp, oldlenp);
+            return UBCopySysctlString("22F76", oldp, oldlenp);
         }
         if (strcmp(name, "kern.osrelease") == 0) {
-            return UBCopySysctlString("24.0.0", oldp, oldlenp);
+            return UBCopySysctlString("24.5.0", oldp, oldlenp);
         }
     }
     return UBOrigSysctlByName(name, oldp, oldlenp, newp, newlen);
@@ -2241,7 +2241,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
         UBDiagnostic([NSString stringWithFormat:
-            @"UberDriverBypass 0.29.0 loaded; mode=%@ actualApp=%@ actualOS=%@ targetApp=%@",
+            @"UberDriverBypass 0.30.0 loaded; mode=%@ actualApp=%@ actualOS=%@ targetApp=%@",
             UBReferenceCaptureMode ? @"REFERENCE_CAPTURE" : @"COMPATIBILITY_TEST",
             UBActualAppVersion ?: @"", UBActualOSVersion ?: @"", UBTargetAppVersion]);
         UBInstallNativeCronetHooks();
