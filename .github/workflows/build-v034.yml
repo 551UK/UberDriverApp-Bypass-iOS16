@@ -1,0 +1,52 @@
+name: Build v0.34
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: uberdriver-v034
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Theos
+        uses: Randomblock1/theos-action@v1
+        with:
+          theos-sdks: https://github.com/theos/sdks
+          theos-sdks-branch: master
+
+      - name: Build package
+        run: make clean package FINALPACKAGE=1
+
+      - name: Validate package
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb="$(find packages -maxdepth 1 -name '*.deb' -print -quit)"
+          test -n "$deb"
+          test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
+          test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.34.0"
+
+      - name: Publish release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: v0.34.0
+          name: UberDriverApp iOS 16 compatibility v0.34.0
+          body: |
+            Exact 4.584.10000 metadata compatibility profile using values taken from the supplied 4.584 IPA.
+          artifacts: packages/*.deb
+          artifactErrorsFailBuild: true
+          allowUpdates: true
+          replacesArtifacts: true
+          makeLatest: true
