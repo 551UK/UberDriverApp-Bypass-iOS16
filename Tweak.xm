@@ -2086,7 +2086,10 @@ static void UBHookCronetUrlRequestCallbackOnReadCompleted(void *callback,
     }
 }
 
+static BOOL UBNativeCronetHooksInstalled = NO;
+
 static void UBInstallNativeCronetHooks(void) {
+    if (UBNativeCronetHooksInstalled) return;
     NSString *frameworks = NSBundle.mainBundle.privateFrameworksPath;
     NSString *path = [frameworks stringByAppendingPathComponent:@"Cronet.framework/Cronet"];
     void *handle = dlopen(path.fileSystemRepresentation, RTLD_LAZY | RTLD_LOCAL);
@@ -2142,6 +2145,7 @@ static void UBInstallNativeCronetHooks(void) {
     }
 
     if (UBOrigCronetHeadersAdd && UBOrigCronetUrlRequestInit) {
+        UBNativeCronetHooksInstalled = YES;
         if (UBOrigCronetUploadProviderCreateWith && UBOrigCronetUploadSinkOnReadSucceeded &&
             UBOrigCronetOnReadCompleted) {
             UBDiagnostic(@"native Cronet add+final-request+upload-body+response hooks installed");
@@ -2234,10 +2238,26 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
         UBDiagnostic([NSString stringWithFormat:
-            @"UberDriverBypass 0.27.0 loaded; mode=%@ actualApp=%@ actualOS=%@ targetApp=%@",
+            @"UberDriverBypass 0.28.0 loaded; mode=%@ actualApp=%@ actualOS=%@ targetApp=%@",
             UBReferenceCaptureMode ? @"REFERENCE_CAPTURE" : @"COMPATIBILITY_TEST",
             UBActualAppVersion ?: @"", UBActualOSVersion ?: @"", UBTargetAppVersion]);
         UBInstallNativeCronetHooks();
+
+        // Newer Uber builds may load Cronet after tweak construction. Retry
+        // a few times; the installer is idempotent once hooks are active.
+        for (NSNumber *delay in @[@1, @3, @6, @10]) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
+                                         (int64_t)(delay.doubleValue * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                if (!UBNativeCronetHooksInstalled) {
+                    UBDiagnostic([NSString stringWithFormat:
+                        @"Cronet retry after %@s installed=%d",
+                        delay, UBNativeCronetHooksInstalled]);
+                    UBInstallNativeCronetHooks();
+                }
+            });
+        }
+
         %init;
 
         if (!UBReferenceCaptureMode) {
