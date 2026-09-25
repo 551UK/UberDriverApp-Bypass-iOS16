@@ -24,7 +24,7 @@ jobs:
         if: runner.os == 'macOS'
         run: python3 tests/test_metadata.py
 
-      - name: Validate v0.32 attestation comparison diagnostics
+      - name: Validate v0.33 request-shape compatibility diagnostics
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -40,6 +40,9 @@ jobs:
           grep -q 'mode=%@ actualApp=%@ actualOS=%@ targetApp=%@' Tweak.xm
           grep -q 'UBTargetOSVersion = @"18.4"' Tweak.xm
           grep -q 'UBTargetOSBuild = @"22E240"' Tweak.xm
+          grep -q 'UBTargetOSBuildHeader = @"Version 18.4 (Build 22E240)"' Tweak.xm
+          grep -q 'go-online deviceData comparison presence' Tweak.xm
+          grep -q 'header comparison presence x-uber-device-year-class' Tweak.xm
           grep -q 'UBTargetAppVersion = @"4.585.10000"' Tweak.xm
           grep -q 'reference capture mode active' Tweak.xm
           grep -q 'go-online deviceData inventory count=' Tweak.xm
@@ -73,7 +76,7 @@ jobs:
           test -n "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
           test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64"
-          test "$(dpkg-deb -f "$deb" Version)" = "0.32.0"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.33.0"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/uberdriver-check"
           dylib="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.dylib"
           filter="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.plist"
@@ -89,8 +92,8 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: ncipollo/release-action@v1
         with:
-          tag: v0.32.0
-          name: UberDriverApp Bypass iOS 16 v0.32.0
+          tag: v0.33.0
+          name: UberDriverApp Bypass iOS 16 v0.33.0
           body: |
             Reference-identity compatibility build for the old Uber Driver app on rootless iOS 16.
 
