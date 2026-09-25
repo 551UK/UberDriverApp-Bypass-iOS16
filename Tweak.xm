@@ -16,7 +16,7 @@ static NSString * const UBTargetOSLongVersion = @"18.0.0";
 static NSString * const UBTargetOSMajor = @"18";
 static NSString * const UBTargetOSBuild = @"22A3354";
 static NSString * const UBOldAppVersion = @"4.527.10000";
-static NSString * const UBTargetAppVersion = @"4.584.10000";
+static NSString * const UBTargetAppVersion = @"4.585.10000";
 static NSString * const UBOldContinuousVersion = @"273504.1";
 static NSString * const UBTargetContinuousVersion = @"326106.1";
 static NSString * const UBTargetBuildUUID = @"7a058960-ab07-11f1-8af6-ebef13f4ae76";
@@ -1816,7 +1816,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.19.0 loaded; Go Online checksum-field test active");
+        UBDiagnostic(@"UberDriverBypass 0.20.0 loaded; current App Store version test active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();
