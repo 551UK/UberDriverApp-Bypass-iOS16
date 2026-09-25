@@ -24,7 +24,7 @@ jobs:
         if: runner.os == 'macOS'
         run: python3 tests/test_metadata.py
 
-      - name: Validate v0.19 checksum-field test
+      - name: Validate v0.20 current-version test
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -54,7 +54,7 @@ jobs:
           test -n "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
           test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64"
-          test "$(dpkg-deb -f "$deb" Version)" = "0.19.0"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.20.0"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/uberdriver-check"
           dylib="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.dylib"
           filter="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.plist"
@@ -70,16 +70,16 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: ncipollo/release-action@v1
         with:
-          tag: v0.19.0
-          name: UberDriverApp Bypass iOS 16 v0.19.0
+          tag: v0.20.0
+          name: UberDriverApp Bypass iOS 16 v0.20.0
           body: |
-            Go Online checksum-field compatibility test for Uber Driver 4.527.10000.
+            Current App Store version A/B test for Uber Driver 4.527.10000.
 
-            v0.18.0 confirms the outgoing Go Online request already identifies as iOS 18.0 and Uber Driver 4.584.10000, while request.deviceData still contains versionChecksum and envChecksum immediately before Uber returns HTTP 423 ForceUpgrade.
+            v0.19.0 successfully removed request.deviceData.versionChecksum and envChecksum but the server still returned HTTP 423 ForceUpgrade.
 
-            v0.19.0 keeps the existing version/OS spoof and ForceUpgrade UI filtering, but removes only request.deviceData.versionChecksum and request.deviceData.envChecksum from Go Online JSON requests. It does not invent or forge replacement checksum values.
+            v0.20.0 changes only the spoofed app version from 4.584.10000 to the current App Store version 4.585.10000. The checksum-removal behavior stays unchanged so this isolates whether Uber raised the Go Online minimum version after 4.584.10000.
 
-            Install v0.19.0, respring, fully kill Uber Driver, reopen it and press Go Online once. Then send Documents/UberDriverBypass.log.
+            Install v0.20.0, respring, fully kill Uber Driver, reopen it and press Go Online once. Then send Documents/UberDriverBypass.log.
 
           artifacts: packages/*.deb
           artifactErrorsFailBuild: true
