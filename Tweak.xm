@@ -15,6 +15,7 @@ static NSString * const UBTargetOSVersion = @"18.4";
 static NSString * const UBTargetOSLongVersion = @"18.4.0";
 static NSString * const UBTargetOSMajor = @"18";
 static NSString * const UBTargetOSBuild = @"22E240";
+static NSString * const UBTargetOSBuildHeader = @"Version 18.4 (Build 22E240)";
 static NSString * const UBOldAppVersion = @"4.527.10000";
 static NSString * const UBTargetAppVersion = @"4.585.10000";
 static NSString * const UBOldContinuousVersion = @"273504.1";
@@ -169,7 +170,9 @@ static id UBRewriteValueForKey(id value, NSString *key) {
            @"appminosversion", @"apptargetosversion", @"xuberalsdeviceosversion"] containsObject:k])
         return numeric ? @18 : UBTargetOSVersion;
     if ([k isEqualToString:@"osmajorversion"]) return numeric ? @18 : UBTargetOSMajor;
-    if ([@[@"xuberdeviceosbuild", @"osversionbuild", @"osbuildversion"] containsObject:k])
+    if ([k isEqualToString:@"xuberdeviceosbuild"])
+        return UBTargetOSBuildHeader;
+    if ([@[@"osversionbuild", @"osbuildversion"] containsObject:k])
         return UBTargetOSBuild;
     if ([@[@"deviceos", @"xuberdeviceos", @"xuberalsdeviceos", @"backenddeviceos"] containsObject:k]) {
         NSRange digit = [v rangeOfCharacterFromSet:NSCharacterSet.decimalDigitCharacterSet];
@@ -452,6 +455,13 @@ static void UBLogGoOnlineDeviceDataInventory(id json) {
     UBDiagnostic([NSString stringWithFormat:
         @"go-online deviceData inventory count=%lu keys=%@",
         (unsigned long)keys.count, [keyNames componentsJoinedByString:@","]]);
+
+    UBDiagnostic([NSString stringWithFormat:
+        @"go-online deviceData comparison presence appPermissionData=%d contactlessPaymentSupport=%d deviceClassification=%d userInteractionData=%d",
+        deviceData[@"appPermissionData"] != nil,
+        deviceData[@"contactlessPaymentSupport"] != nil,
+        deviceData[@"deviceClassification"] != nil,
+        deviceData[@"userInteractionData"] != nil]);
 
     NSUInteger logged = 0;
     for (id keyObject in keys) {
@@ -1311,6 +1321,13 @@ static void UBLogAttestationRequestHeaders(NSURLRequest *request, NSString *labe
     UBDiagnostic([NSString stringWithFormat:
         @"%@ header names count=%lu names=%@",
         label, (unsigned long)names.count, [names componentsJoinedByString:@","]]);
+
+    UBDiagnostic([NSString stringWithFormat:
+        @"%@ header comparison presence x-uber-device-year-class=%d x-uber-token=%d",
+        [headers objectForKey:@"x-uber-device-year-class"] != nil ||
+            [headers objectForKey:@"X-Uber-Device-Year-Class"] != nil,
+        [headers objectForKey:@"x-uber-token"] != nil ||
+            [headers objectForKey:@"X-Uber-Token"] != nil]);
 
     for (NSString *key in names) {
         if (!UBIsSafeAttestationIdentityHeader(key)) continue;
@@ -2287,7 +2304,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
         UBDiagnostic([NSString stringWithFormat:
-            @"UberDriverBypass 0.32.0 loaded; mode=%@ actualApp=%@ actualOS=%@ targetApp=%@ targetOS=%@ targetBuild=%@",
+            @"UberDriverBypass 0.33.0 loaded; mode=%@ actualApp=%@ actualOS=%@ targetApp=%@ targetOS=%@ targetBuild=%@",
             UBReferenceCaptureMode ? @"REFERENCE_CAPTURE" : @"COMPATIBILITY_TEST",
             UBActualAppVersion ?: @"", UBActualOSVersion ?: @"", UBTargetAppVersion,
             UBTargetOSVersion, UBTargetOSBuild]);
