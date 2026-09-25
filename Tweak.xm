@@ -21,6 +21,8 @@ static NSString * const UBOldContinuousVersion = @"273504.1";
 static NSString * const UBTargetContinuousVersion = @"326106.1";
 static NSString * const UBTargetBuildUUID = @"7a058960-ab07-11f1-8af6-ebef13f4ae76";
 static NSString *UBActualOSVersion = nil;
+static NSString *UBActualAppVersion = nil;
+static BOOL UBReferenceCaptureMode = NO;
 static __thread BOOL UBSkipJSONHooks = NO;
 
 static BOOL UBIsMainBundle(NSBundle *bundle) {
@@ -80,6 +82,7 @@ static NSData *UBReplaceEqualLengthBytes(NSData *input, NSString *from, NSString
 }
 
 static NSData *UBRewriteOpaqueDeviceIdentityData(NSData *body) {
+    if (UBReferenceCaptureMode) return body;
     if (!body.length) return body;
 
     NSData *out = body;
@@ -99,6 +102,7 @@ static NSData *UBRewriteOpaqueDeviceIdentityData(NSData *body) {
 }
 
 static NSString *UBRewriteDeviceDataHeader(NSString *value) {
+    if (UBReferenceCaptureMode) return value;
     if (![value isKindOfClass:NSString.class] || !value.length) return value;
 
     NSString *out = value;
@@ -151,6 +155,7 @@ static NSString *UBRewriteDeviceDataHeader(NSString *value) {
 }
 
 static id UBRewriteValueForKey(id value, NSString *key) {
+    if (UBReferenceCaptureMode) return value;
     if (![key isKindOfClass:NSString.class]) return value;
     NSString *k = UBNormalizedKey(key);
     if ([k isEqualToString:@"xuberdevicedata"] && [value isKindOfClass:NSString.class]) {
@@ -1257,6 +1262,7 @@ static void UBDiagnoseAttestationData(NSData *data, NSString *label, NSString *d
 }
 
 static NSData *UBRewriteBody(NSData *body) {
+    if (UBReferenceCaptureMode) return body;
     // Never decode compressed bodies, streams, protobuf or file uploads as text.
     if (!body.length || body.length > 2 * 1024 * 1024) return body;
     id json = [NSJSONSerialization JSONObjectWithData:body options:0 error:nil];
@@ -1335,14 +1341,14 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
 
 %hook NSJSONSerialization
 + (NSData *)dataWithJSONObject:(id)object options:(NSJSONWritingOptions)options error:(NSError **)error {
-    if (UBSkipJSONHooks) return %orig(object, options, error);
+    if (UBReferenceCaptureMode || UBSkipJSONHooks) return %orig(object, options, error);
     NSUInteger changes = 0;
     id updated = UBRewriteJSON(object, 0, &changes);
     return %orig(updated, options, error);
 }
 
 + (id)JSONObjectWithData:(NSData *)data options:(NSJSONReadingOptions)options error:(NSError **)error {
-    if (UBSkipJSONHooks) return %orig(data, options, error);
+    if (UBReferenceCaptureMode || UBSkipJSONHooks) return %orig(data, options, error);
     id result = %orig(data, options, error);
     NSUInteger removed = 0;
     id filtered = UBFilterForceUpgradeOnlineBlockers(result, 0, &removed);
@@ -1354,7 +1360,7 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
 }
 
 + (id)JSONObjectWithStream:(NSInputStream *)stream options:(NSJSONReadingOptions)options error:(NSError **)error {
-    if (UBSkipJSONHooks) return %orig(stream, options, error);
+    if (UBReferenceCaptureMode || UBSkipJSONHooks) return %orig(stream, options, error);
     id result = %orig(stream, options, error);
     NSUInteger removed = 0;
     id filtered = UBFilterForceUpgradeOnlineBlockers(result, 0, &removed);
@@ -1469,6 +1475,7 @@ static void UBLogForceUpgradeResponseDetails(id object, NSString *path, NSUInteg
 }
 
 static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *label) {
+    if (UBReferenceCaptureMode) return data;
     if (!data.length || data.length > 2 * 1024 * 1024 || !label.length) return data;
 
     BOOL previousSkip = UBSkipJSONHooks;
@@ -1652,16 +1659,19 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
 
 %hook UIDevice
 - (NSString *)systemVersion {
+    if (UBReferenceCaptureMode) return %orig;
     return UBTargetOSVersion;
 }
 %end
 
 %hook NSProcessInfo
 - (NSString *)operatingSystemVersionString {
+    if (UBReferenceCaptureMode) return %orig;
     return @"Version 17.0 (Build 21A329)";
 }
 
 - (NSOperatingSystemVersion)operatingSystemVersion {
+    if (UBReferenceCaptureMode) return %orig;
     NSOperatingSystemVersion version;
     version.majorVersion = 17;
     version.minorVersion = 0;
@@ -1670,6 +1680,7 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
 }
 
 - (BOOL)isOperatingSystemAtLeastVersion:(NSOperatingSystemVersion)version {
+    if (UBReferenceCaptureMode) return %orig(version);
     if (version.majorVersion < 17) return YES;
     if (version.majorVersion > 17) return NO;
     if (version.minorVersion < 0) return YES;
@@ -1680,6 +1691,7 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
 
 %hook NSBundle
 - (id)objectForInfoDictionaryKey:(NSString *)key {
+    if (UBReferenceCaptureMode) return %orig;
     if (UBIsMainBundle(self)) {
         if ([key isEqualToString:@"CFBundleShortVersionString"] || [key isEqualToString:@"CFBundleVersion"]) {
             return UBTargetAppVersion;
@@ -1699,6 +1711,7 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
 
 - (NSDictionary *)localizedInfoDictionary {
     NSDictionary *original = %orig;
+    if (UBReferenceCaptureMode) return original;
     if (!UBIsMainBundle(self)) return original;
     NSMutableDictionary *copy = original ? [original mutableCopy] : [NSMutableDictionary dictionary];
     copy[@"CFBundleShortVersionString"] = UBTargetAppVersion;
@@ -1711,6 +1724,7 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
 
 - (NSDictionary *)infoDictionary {
     NSDictionary *original = %orig;
+    if (UBReferenceCaptureMode) return original;
     if (!UBIsMainBundle(self) || !original) return original;
 
     NSMutableDictionary *copy = [original mutableCopy];
@@ -1922,6 +1936,13 @@ static BOOL UBCronetRewriteHeader(void *header, BOOL *sawAppVersion, BOOL *sawDe
 
     NSString *value = [NSString stringWithUTF8String:raw];
     if (!value) return NO;
+
+    if (UBReferenceCaptureMode) {
+        if (UBCronetIsAppVersionHeader(name) && sawAppVersion) *sawAppVersion = YES;
+        if (UBCronetIsDeviceDataHeader(name) && sawDeviceData) *sawDeviceData = YES;
+        return NO;
+    }
+
     NSString *updated = value;
 
     if (UBCronetIsAppVersionHeader(name)) {
@@ -2136,6 +2157,7 @@ static void UBInstallNativeCronetHooks(void) {
 
 static CFTypeRef (*UBOrigCFBundleGetValueForInfoDictionaryKey)(CFBundleRef bundle, CFStringRef key) = NULL;
 static CFTypeRef UBHookCFBundleGetValueForInfoDictionaryKey(CFBundleRef bundle, CFStringRef key) {
+    if (UBReferenceCaptureMode) return UBOrigCFBundleGetValueForInfoDictionaryKey(bundle, key);
     if (bundle == CFBundleGetMainBundle() && key && CFGetTypeID(key) == CFStringGetTypeID()) {
         if (CFEqual(key, CFSTR("CFBundleShortVersionString")) || CFEqual(key, CFSTR("CFBundleVersion"))) {
             return CFSTR("4.584.10000");
@@ -2178,6 +2200,7 @@ static int UBCopySysctlString(const char *spoof, void *oldp, size_t *oldlenp) {
 }
 
 static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, const void *newp, size_t newlen) {
+    if (UBReferenceCaptureMode) return UBOrigSysctlByName(name, oldp, oldlenp, newp, newlen);
     if (name && !newp) {
         if (strcmp(name, "kern.osproductversion") == 0) {
             return UBCopySysctlString("18.0", oldp, oldlenp);
@@ -2197,6 +2220,9 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
         if (![NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.ubercab.UberPartner"]) return;
 
         UBActualOSVersion = UIDevice.currentDevice.systemVersion;
+        NSDictionary *rawInfo = [NSBundle.mainBundle infoDictionary];
+        UBActualAppVersion = [[rawInfo objectForKey:@"CFBundleShortVersionString"] copy] ?: @"";
+        UBReferenceCaptureMode = [UBActualAppVersion isEqualToString:UBTargetAppVersion];
 
         MSHookFunction((void *)&CFBundleGetValueForInfoDictionaryKey,
                        (void *)&UBHookCFBundleGetValueForInfoDictionaryKey,
@@ -2207,17 +2233,25 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.25.0 loaded; known-working metadata profile active");
+        UBDiagnostic([NSString stringWithFormat:
+            @"UberDriverBypass 0.26.0 loaded; mode=%@ actualApp=%@ actualOS=%@ targetApp=%@",
+            UBReferenceCaptureMode ? @"REFERENCE_CAPTURE" : @"COMPATIBILITY_TEST",
+            UBActualAppVersion ?: @"", UBActualOSVersion ?: @"", UBTargetAppVersion]);
         UBInstallNativeCronetHooks();
         %init;
-        UBInstallDriverChecksModelHooks();
-        UBInstallLocalForceUpgradeHooks();
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{
-            if (!UBOrigDriverChecksIssues && !UBOrigDriverChecksFutureBlockers) {
-                UBInstallDriverChecksModelHooks();
-            }
+
+        if (!UBReferenceCaptureMode) {
+            UBInstallDriverChecksModelHooks();
             UBInstallLocalForceUpgradeHooks();
-        });
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                if (!UBOrigDriverChecksIssues && !UBOrigDriverChecksFutureBlockers) {
+                    UBInstallDriverChecksModelHooks();
+                }
+                UBInstallLocalForceUpgradeHooks();
+            });
+        } else {
+            UBDiagnostic(@"reference capture mode active: compatibility rewriting and response filtering disabled");
+        }
     }
 }
