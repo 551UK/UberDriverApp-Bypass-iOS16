@@ -11,16 +11,28 @@
 #import <dlfcn.h>
 #import <strings.h>
 
-static NSString * const UBTargetOSVersion = @"18.4";
-static NSString * const UBTargetOSLongVersion = @"18.4.0";
+static NSString * const UBTargetOSVersion = @"18.5";
+static NSString * const UBTargetOSLongVersion = @"18.5.0";
 static NSString * const UBTargetOSMajor = @"18";
-static NSString * const UBTargetOSBuild = @"22E240";
-static NSString * const UBTargetOSBuildHeader = @"Version 18.4 (Build 22E240)";
+static NSString * const UBTargetOSBuild = @"22F76";
+static NSString * const UBTargetOSBuildHeader = @"Version 18.5 (Build 22F76)";
 static NSString * const UBOldAppVersion = @"4.527.10000";
-static NSString * const UBTargetAppVersion = @"4.585.10000";
+static NSString * const UBTargetAppVersion = @"4.584.10000";
 static NSString * const UBOldContinuousVersion = @"273504.1";
 static NSString * const UBTargetContinuousVersion = @"326106.1";
 static NSString * const UBTargetBuildUUID = @"7a058960-ab07-11f1-8af6-ebef13f4ae76";
+static NSString * const UBOldVersionChecksum = @"E0955E0B-DD61-304C-9532-47EB330F481C";
+static NSString * const UBTargetVersionChecksum = @"4C4C44C5-5555-3144-A1E8-67C520AB3A39";
+static NSString * const UBTargetMinimumOSVersion = @"17.0";
+static NSString * const UBTargetCommitHash = @"680f857102b76e94232b9339fd324673f8849b1b";
+static NSString * const UBTargetBuildMachineOSBuild = @"25E253";
+static NSString * const UBTargetDTPlatformBuild = @"23F73";
+static NSString * const UBTargetDTPlatformVersion = @"26.5";
+static NSString * const UBTargetDTSDKBuild = @"23F73";
+static NSString * const UBTargetDTSDKName = @"iphoneos26.5";
+static NSString * const UBTargetDTXcode = @"2650";
+static NSString * const UBTargetDTXcodeBuild = @"17F42";
+static NSString * const UBTargetDTAppStoreToolsBuild = @"17F106";
 static NSString *UBActualOSVersion = nil;
 static NSString *UBActualAppVersion = nil;
 static BOOL UBReferenceCaptureMode = NO;
@@ -166,9 +178,13 @@ static id UBRewriteValueForKey(id value, NSString *key) {
     if (![value isKindOfClass:NSString.class] && !numeric) return value;
     NSString *v = numeric ? [value stringValue] : value;
     if ([@[@"deviceosversion", @"deviceosversionstring", @"osversion", @"osfullversion", @"iosversion",
-           @"currentosversion", @"previousosversion", @"prevosversion", @"minimumosversion",
+           @"currentosversion", @"previousosversion", @"prevosversion",
            @"appminosversion", @"apptargetosversion", @"xuberalsdeviceosversion"] containsObject:k])
         return numeric ? @18 : UBTargetOSVersion;
+    if ([k isEqualToString:@"minimumosversion"]) return UBTargetMinimumOSVersion;
+    if ([k isEqualToString:@"ubcommithash"] && [v isEqualToString:@"eda45dda70ccb1ba9a35ae18cbab8327de0d1c20"]) return UBTargetCommitHash;
+    if ([k isEqualToString:@"ubuilduuid"] && [v caseInsensitiveCompare:@"5ec85290-717e-11f0-b4e0-ad464ed114c6"] == NSOrderedSame) return UBTargetBuildUUID;
+    if ([k isEqualToString:@"versionchecksum"] && [v caseInsensitiveCompare:UBOldVersionChecksum] == NSOrderedSame) return UBTargetVersionChecksum;
     if ([k isEqualToString:@"osmajorversion"]) return numeric ? @18 : UBTargetOSMajor;
     if ([k isEqualToString:@"xuberdeviceosbuild"])
         return UBTargetOSBuildHeader;
@@ -1734,14 +1750,14 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
 %hook NSProcessInfo
 - (NSString *)operatingSystemVersionString {
     if (UBReferenceCaptureMode) return %orig;
-    return @"Version 18.4 (Build 22E240)";
+    return @"Version 18.5 (Build 22F76)";
 }
 
 - (NSOperatingSystemVersion)operatingSystemVersion {
     if (UBReferenceCaptureMode) return %orig;
     NSOperatingSystemVersion version;
     version.majorVersion = 18;
-    version.minorVersion = 4;
+    version.minorVersion = 5;
     version.patchVersion = 0;
     return version;
 }
@@ -1750,8 +1766,8 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
     if (UBReferenceCaptureMode) return %orig(version);
     if (version.majorVersion < 18) return YES;
     if (version.majorVersion > 18) return NO;
-    if (version.minorVersion < 4) return YES;
-    if (version.minorVersion > 4) return NO;
+    if (version.minorVersion < 5) return YES;
+    if (version.minorVersion > 5) return NO;
     return version.patchVersion <= 0;
 }
 %end
@@ -1763,15 +1779,18 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
         if ([key isEqualToString:@"CFBundleShortVersionString"] || [key isEqualToString:@"CFBundleVersion"]) {
             return UBTargetAppVersion;
         }
-        if ([key isEqualToString:@"MinimumOSVersion"]) {
-            return UBTargetOSVersion;
-        }
-        if ([key isEqualToString:@"UBContinuousVersion"]) {
-            return UBTargetContinuousVersion;
-        }
-        if ([key isEqualToString:@"UBBuildUUID"]) {
-            return UBTargetBuildUUID;
-        }
+        if ([key isEqualToString:@"MinimumOSVersion"]) return UBTargetMinimumOSVersion;
+        if ([key isEqualToString:@"UBContinuousVersion"]) return UBTargetContinuousVersion;
+        if ([key isEqualToString:@"UBBuildUUID"]) return UBTargetBuildUUID;
+        if ([key isEqualToString:@"UBCommitHash"]) return UBTargetCommitHash;
+        if ([key isEqualToString:@"BuildMachineOSBuild"]) return UBTargetBuildMachineOSBuild;
+        if ([key isEqualToString:@"DTPlatformBuild"]) return UBTargetDTPlatformBuild;
+        if ([key isEqualToString:@"DTPlatformVersion"]) return UBTargetDTPlatformVersion;
+        if ([key isEqualToString:@"DTSDKBuild"]) return UBTargetDTSDKBuild;
+        if ([key isEqualToString:@"DTSDKName"]) return UBTargetDTSDKName;
+        if ([key isEqualToString:@"DTXcode"]) return UBTargetDTXcode;
+        if ([key isEqualToString:@"DTXcodeBuild"]) return UBTargetDTXcodeBuild;
+        if ([key isEqualToString:@"DTAppStoreToolsBuild"]) return UBTargetDTAppStoreToolsBuild;
     }
     return %orig;
 }
@@ -1783,9 +1802,18 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
     NSMutableDictionary *copy = original ? [original mutableCopy] : [NSMutableDictionary dictionary];
     copy[@"CFBundleShortVersionString"] = UBTargetAppVersion;
     copy[@"CFBundleVersion"] = UBTargetAppVersion;
-    copy[@"MinimumOSVersion"] = UBTargetOSVersion;
+    copy[@"MinimumOSVersion"] = UBTargetMinimumOSVersion;
     copy[@"UBContinuousVersion"] = UBTargetContinuousVersion;
     copy[@"UBBuildUUID"] = UBTargetBuildUUID;
+    copy[@"UBCommitHash"] = UBTargetCommitHash;
+    copy[@"BuildMachineOSBuild"] = UBTargetBuildMachineOSBuild;
+    copy[@"DTPlatformBuild"] = UBTargetDTPlatformBuild;
+    copy[@"DTPlatformVersion"] = UBTargetDTPlatformVersion;
+    copy[@"DTSDKBuild"] = UBTargetDTSDKBuild;
+    copy[@"DTSDKName"] = UBTargetDTSDKName;
+    copy[@"DTXcode"] = UBTargetDTXcode;
+    copy[@"DTXcodeBuild"] = UBTargetDTXcodeBuild;
+    copy[@"DTAppStoreToolsBuild"] = UBTargetDTAppStoreToolsBuild;
     return copy;
 }
 
@@ -1797,9 +1825,18 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
     NSMutableDictionary *copy = [original mutableCopy];
     copy[@"CFBundleShortVersionString"] = UBTargetAppVersion;
     copy[@"CFBundleVersion"] = UBTargetAppVersion;
-    copy[@"MinimumOSVersion"] = UBTargetOSVersion;
+    copy[@"MinimumOSVersion"] = UBTargetMinimumOSVersion;
     copy[@"UBContinuousVersion"] = UBTargetContinuousVersion;
     copy[@"UBBuildUUID"] = UBTargetBuildUUID;
+    copy[@"UBCommitHash"] = UBTargetCommitHash;
+    copy[@"BuildMachineOSBuild"] = UBTargetBuildMachineOSBuild;
+    copy[@"DTPlatformBuild"] = UBTargetDTPlatformBuild;
+    copy[@"DTPlatformVersion"] = UBTargetDTPlatformVersion;
+    copy[@"DTSDKBuild"] = UBTargetDTSDKBuild;
+    copy[@"DTSDKName"] = UBTargetDTSDKName;
+    copy[@"DTXcode"] = UBTargetDTXcode;
+    copy[@"DTXcodeBuild"] = UBTargetDTXcodeBuild;
+    copy[@"DTAppStoreToolsBuild"] = UBTargetDTAppStoreToolsBuild;
     return copy;
 }
 %end
@@ -2274,13 +2311,13 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
     if (UBReferenceCaptureMode) return UBOrigSysctlByName(name, oldp, oldlenp, newp, newlen);
     if (name && !newp) {
         if (strcmp(name, "kern.osproductversion") == 0) {
-            return UBCopySysctlString("18.4", oldp, oldlenp);
+            return UBCopySysctlString("18.5", oldp, oldlenp);
         }
         if (strcmp(name, "kern.osversion") == 0) {
-            return UBCopySysctlString("22E240", oldp, oldlenp);
+            return UBCopySysctlString("22F76", oldp, oldlenp);
         }
         if (strcmp(name, "kern.osrelease") == 0) {
-            return UBCopySysctlString("24.4.0", oldp, oldlenp);
+            return UBCopySysctlString("24.5.0", oldp, oldlenp);
         }
     }
     return UBOrigSysctlByName(name, oldp, oldlenp, newp, newlen);
@@ -2305,7 +2342,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
         UBDiagnostic([NSString stringWithFormat:
-            @"UberDriverBypass 0.33.0 loaded; mode=%@ actualApp=%@ actualOS=%@ targetApp=%@ targetOS=%@ targetBuild=%@",
+            @"UberDriverBypass 0.34.0 loaded; mode=%@ actualApp=%@ actualOS=%@ targetApp=%@ targetOS=%@ targetBuild=%@",
             UBReferenceCaptureMode ? @"REFERENCE_CAPTURE" : @"COMPATIBILITY_TEST",
             UBActualAppVersion ?: @"", UBActualOSVersion ?: @"", UBTargetAppVersion,
             UBTargetOSVersion, UBTargetOSBuild]);
