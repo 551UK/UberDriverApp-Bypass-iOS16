@@ -1167,6 +1167,18 @@ static void UBInspectIntegrityToken(NSString *token, NSString *source) {
         return;
     }
 
+    // Structural-only diagnostics: record encoded and decoded lengths for each
+    // dot-separated component. Never log the component contents.
+    NSUInteger segmentLimit = MIN(segments.count, (NSUInteger)8);
+    for (NSUInteger i = 0; i < segmentLimit; i++) {
+        NSString *segment = segments[i];
+        NSData *decoded = UBDecodeBase64URLSegment(segment);
+        UBDiagnostic([NSString stringWithFormat:
+            @"integrity-token %@ segment[%lu] encodedChars=%lu decodedBytes=%lu",
+            source, (unsigned long)i, (unsigned long)segment.length,
+            (unsigned long)decoded.length]);
+    }
+
     NSData *header = UBDecodeBase64URLSegment(segments[0]);
     if (header.length) UBLogIntegrityTokenJSONPart(header, source, @"header");
 
@@ -1276,6 +1288,39 @@ static NSData *UBRewriteBody(NSData *body) {
     return encoded;
 }
 
+static BOOL UBIsSafeAttestationIdentityHeader(NSString *key) {
+    NSString *k = UBNormalizedKey(key ?: @"");
+    return [@[
+        @"useragent",
+        @"xuberclientversion", @"xuberclientid", @"xuberclientname",
+        @"xuberdevice", @"xuberdevicemodel", @"xuberdeviceos", @"xuberdeviceosbuild",
+        @"xuberalsappversion", @"xuberalsdeviceos", @"xuberalsdeviceosversion",
+        @"xuberappversion", @"xuberbuildversion",
+        @"xuberapplifecyclestate", @"xuberdevicelanguage", @"xuberdevicetimezone",
+        @"contenttype", @"acceptlanguage"
+    ] containsObject:k];
+}
+
+static void UBLogAttestationRequestHeaders(NSURLRequest *request, NSString *label) {
+    if (!request || !label.length) return;
+    NSDictionary<NSString *, NSString *> *headers = request.allHTTPHeaderFields ?: @{};
+
+    NSArray<NSString *> *names = [[headers allKeys] sortedArrayUsingComparator:^NSComparisonResult(NSString *a, NSString *b) {
+        return [a.lowercaseString compare:b.lowercaseString];
+    }];
+    UBDiagnostic([NSString stringWithFormat:
+        @"%@ header names count=%lu names=%@",
+        label, (unsigned long)names.count, [names componentsJoinedByString:@","]]);
+
+    for (NSString *key in names) {
+        if (!UBIsSafeAttestationIdentityHeader(key)) continue;
+        NSString *value = headers[key] ?: @"";
+        if (value.length > 240) value = [value substringToIndex:240];
+        UBDiagnostic([NSString stringWithFormat:
+            @"%@ identity header %@=%@", label, key.lowercaseString, value]);
+    }
+}
+
 static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
     if (!UBIsUberURL(request.URL)) return request;
 
@@ -1332,6 +1377,7 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
                 @"%@ Foundation request method=%@ headers=%lu",
                 attestationLabel, finalRequest.HTTPMethod ?: @"",
                 (unsigned long)finalRequest.allHTTPHeaderFields.count]);
+            UBLogAttestationRequestHeaders(finalRequest, attestationLabel);
             UBDiagnoseAttestationData(finalRequest.HTTPBody, attestationLabel, @"request");
         }
     }
@@ -2241,7 +2287,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
         UBDiagnostic([NSString stringWithFormat:
-            @"UberDriverBypass 0.31.0 loaded; mode=%@ actualApp=%@ actualOS=%@ targetApp=%@ targetOS=%@ targetBuild=%@",
+            @"UberDriverBypass 0.32.0 loaded; mode=%@ actualApp=%@ actualOS=%@ targetApp=%@ targetOS=%@ targetBuild=%@",
             UBReferenceCaptureMode ? @"REFERENCE_CAPTURE" : @"COMPATIBILITY_TEST",
             UBActualAppVersion ?: @"", UBActualOSVersion ?: @"", UBTargetAppVersion,
             UBTargetOSVersion, UBTargetOSBuild]);
