@@ -1475,7 +1475,6 @@ static void UBLogForceUpgradeResponseDetails(id object, NSString *path, NSUInteg
 }
 
 static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *label) {
-    if (UBReferenceCaptureMode) return data;
     if (!data.length || data.length > 2 * 1024 * 1024 || !label.length) return data;
 
     BOOL previousSkip = UBSkipJSONHooks;
@@ -1494,9 +1493,13 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
                 UBDiagnostic([NSString stringWithFormat:
                     @"go-online blocker details logged=%lu", (unsigned long)blockerDetails]);
             }
-            id filtered = UBFilterForceUpgradeOnlineBlockers(json, 0, &removed);
-            if (removed && [NSJSONSerialization isValidJSONObject:filtered]) {
-                encoded = [NSJSONSerialization dataWithJSONObject:filtered options:0 error:nil];
+            if (!UBReferenceCaptureMode) {
+                id filtered = UBFilterForceUpgradeOnlineBlockers(json, 0, &removed);
+                if (removed && [NSJSONSerialization isValidJSONObject:filtered]) {
+                    encoded = [NSJSONSerialization dataWithJSONObject:filtered options:0 error:nil];
+                }
+            } else {
+                UBDiagnostic(@"reference capture response parsed; no response filtering applied");
             }
         }
     } @finally {
@@ -2238,7 +2241,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
         UBDiagnostic([NSString stringWithFormat:
-            @"UberDriverBypass 0.28.0 loaded; mode=%@ actualApp=%@ actualOS=%@ targetApp=%@",
+            @"UberDriverBypass 0.29.0 loaded; mode=%@ actualApp=%@ actualOS=%@ targetApp=%@",
             UBReferenceCaptureMode ? @"REFERENCE_CAPTURE" : @"COMPATIBILITY_TEST",
             UBActualAppVersion ?: @"", UBActualOSVersion ?: @"", UBTargetAppVersion]);
         UBInstallNativeCronetHooks();
