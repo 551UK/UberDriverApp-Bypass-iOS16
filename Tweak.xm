@@ -1005,7 +1005,8 @@ static BOOL UBAttestationSafeScalarKey(NSString *key) {
         @"category", @"action", @"required", @"enabled", @"supported",
         @"success", @"eligible", @"exempt", @"exemption", @"rooted",
         @"jailbroken", @"emulator", @"version", @"appversion", @"osversion",
-        @"deviceosversion", @"deviceosname", @"sourceapp"
+        @"deviceosversion", @"deviceosname", @"sourceapp",
+        @"appattesttype", @"clienttype"
     ] containsObject:k];
 }
 
@@ -1080,6 +1081,136 @@ static void UBLogAttestationJSONSummary(id object, NSString *path, NSUInteger de
     }
 }
 
+
+static NSData *UBDecodeBase64URLSegment(NSString *segment) {
+    if (![segment isKindOfClass:NSString.class] || !segment.length) return nil;
+    NSString *normalized = [segment stringByReplacingOccurrencesOfString:@"-" withString:@"+"];
+    normalized = [normalized stringByReplacingOccurrencesOfString:@"_" withString:@"/"];
+    NSUInteger remainder = normalized.length % 4;
+    if (remainder) {
+        normalized = [normalized stringByPaddingToLength:normalized.length + (4 - remainder)
+                                              withString:@"="
+                                         startingAtIndex:0];
+    }
+    return [[NSData alloc] initWithBase64EncodedString:normalized
+                                               options:NSDataBase64DecodingIgnoreUnknownCharacters];
+}
+
+static BOOL UBIntegritySafeClaimKey(NSString *key) {
+    NSString *k = UBNormalizedKey(key ?: @"");
+    return [@[
+        @"version", @"appversion", @"appbuild", @"build", @"buildnumber",
+        @"bundleversion", @"bundleid", @"package", @"packagename",
+        @"osversion", @"platform", @"environment", @"verdict",
+        @"integrityverdict", @"status", @"state", @"type", @"subtype",
+        @"appattesttype", @"clienttype", @"sourceapp"
+    ] containsObject:k];
+}
+
+static void UBLogIntegrityTokenJSONPart(NSData *data, NSString *source, NSString *part) {
+    if (!data.length || data.length > 64 * 1024) return;
+
+    id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    if (![json isKindOfClass:NSDictionary.class]) {
+        UBDiagnostic([NSString stringWithFormat:
+            @"integrity-token %@ %@ decoded non-JSON bytes=%lu",
+            source, part, (unsigned long)data.length]);
+        return;
+    }
+
+    NSDictionary *dictionary = (NSDictionary *)json;
+    NSArray *keys = [[dictionary allKeys] sortedArrayUsingComparator:^NSComparisonResult(id a, id b) {
+        return [[a description] compare:[b description]];
+    }];
+    NSMutableArray *names = [NSMutableArray arrayWithCapacity:keys.count];
+    for (id keyObject in keys) [names addObject:[keyObject description] ?: @"?"];
+
+    UBDiagnostic([NSString stringWithFormat:
+        @"integrity-token %@ %@ keys=%@",
+        source, part, [names componentsJoinedByString:@","]]);
+
+    for (id keyObject in keys) {
+        NSString *key = [keyObject isKindOfClass:NSString.class] ? keyObject : [keyObject description];
+        if (!UBIntegritySafeClaimKey(key)) continue;
+
+        id value = dictionary[keyObject];
+        if ([value isKindOfClass:NSString.class] || [value isKindOfClass:NSNumber.class]) {
+            NSString *safeValue = [value description] ?: @"";
+            if (safeValue.length > 160) safeValue = [safeValue substringToIndex:160];
+            UBDiagnostic([NSString stringWithFormat:
+                @"integrity-token %@ %@ claim %@=%@",
+                source, part, key, safeValue]);
+        } else {
+            UBDiagnostic([NSString stringWithFormat:
+                @"integrity-token %@ %@ claim %@ type=%@",
+                source, part, key, NSStringFromClass([value class])]);
+        }
+    }
+}
+
+static void UBInspectIntegrityToken(NSString *token, NSString *source) {
+    if (![token isKindOfClass:NSString.class] || !token.length) return;
+
+    NSArray<NSString *> *segments = [token componentsSeparatedByString:@"."];
+    UBDiagnostic([NSString stringWithFormat:
+        @"integrity-token %@ length=%lu segments=%lu",
+        source, (unsigned long)token.length, (unsigned long)segments.count]);
+
+    if (segments.count < 2) {
+        UBDiagnostic([NSString stringWithFormat:
+            @"integrity-token %@ format=opaque", source]);
+        return;
+    }
+
+    NSData *header = UBDecodeBase64URLSegment(segments[0]);
+    if (header.length) UBLogIntegrityTokenJSONPart(header, source, @"header");
+
+    if (segments.count == 3) {
+        NSData *payload = UBDecodeBase64URLSegment(segments[1]);
+        if (payload.length) UBLogIntegrityTokenJSONPart(payload, source, @"payload");
+    } else if (segments.count == 5) {
+        UBDiagnostic([NSString stringWithFormat:
+            @"integrity-token %@ format=JWE payload-encrypted", source]);
+    } else {
+        UBDiagnostic([NSString stringWithFormat:
+            @"integrity-token %@ format=dot-separated-%lu",
+            source, (unsigned long)segments.count]);
+    }
+}
+
+static void UBFindIntegrityTokens(id object, NSString *path, NSUInteger depth, NSUInteger *count) {
+    if (!object || depth > 10 || !count || *count >= 8) return;
+
+    if ([object isKindOfClass:NSDictionary.class]) {
+        NSDictionary *dictionary = (NSDictionary *)object;
+        for (id keyObject in dictionary) {
+            if (*count >= 8) break;
+            NSString *key = [keyObject isKindOfClass:NSString.class] ? keyObject : [keyObject description];
+            id value = dictionary[keyObject];
+            NSString *nextPath = path.length ? [path stringByAppendingFormat:@".%@", key] : key;
+
+            if ([[UBNormalizedKey(key) lowercaseString] isEqualToString:@"clientintegritytoken"] &&
+                [value isKindOfClass:NSString.class]) {
+                (*count)++;
+                UBInspectIntegrityToken((NSString *)value, nextPath);
+            }
+
+            UBFindIntegrityTokens(value, nextPath, depth + 1, count);
+        }
+        return;
+    }
+
+    if ([object isKindOfClass:NSArray.class]) {
+        NSArray *array = (NSArray *)object;
+        NSUInteger limit = MIN(array.count, (NSUInteger)30);
+        for (NSUInteger i = 0; i < limit && *count < 8; i++) {
+            UBFindIntegrityTokens(array[i],
+                [path stringByAppendingFormat:@"[%lu]", (unsigned long)i],
+                depth + 1, count);
+        }
+    }
+}
+
 static void UBDiagnoseAttestationData(NSData *data, NSString *label, NSString *direction) {
     if (!label.length) return;
     if (!data.length) {
@@ -1113,6 +1244,16 @@ static void UBDiagnoseAttestationData(NSData *data, NSString *label, NSString *d
     UBLogAttestationJSONSummary(json, @"$", 0, &count);
     UBDiagnostic([NSString stringWithFormat:@"%@ %@ diagnostic fields logged=%lu",
                   label, direction, (unsigned long)count]);
+
+    NSUInteger integrityCount = 0;
+    UBFindIntegrityTokens(json,
+        [NSString stringWithFormat:@"%@.%@", label, direction],
+        0, &integrityCount);
+    if (integrityCount) {
+        UBDiagnostic([NSString stringWithFormat:
+            @"%@ %@ integrity tokens inspected=%lu",
+            label, direction, (unsigned long)integrityCount]);
+    }
 }
 
 static NSData *UBRewriteBody(NSData *body) {
@@ -2066,7 +2207,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.23.0 loaded; device attestation diagnostics active");
+        UBDiagnostic(@"UberDriverBypass 0.24.0 loaded; integrity-token structure diagnostics active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();
