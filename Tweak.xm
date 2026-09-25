@@ -2222,7 +2222,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
         UBActualOSVersion = UIDevice.currentDevice.systemVersion;
         NSDictionary *rawInfo = [NSBundle.mainBundle infoDictionary];
         UBActualAppVersion = [[rawInfo objectForKey:@"CFBundleShortVersionString"] copy] ?: @"";
-        UBReferenceCaptureMode = [UBActualAppVersion isEqualToString:UBTargetAppVersion];
+        UBReferenceCaptureMode = [UBActualAppVersion isEqualToString:@"4.585.10000"];
 
         MSHookFunction((void *)&CFBundleGetValueForInfoDictionaryKey,
                        (void *)&UBHookCFBundleGetValueForInfoDictionaryKey,
@@ -2234,7 +2234,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
         UBDiagnostic([NSString stringWithFormat:
-            @"UberDriverBypass 0.26.0 loaded; mode=%@ actualApp=%@ actualOS=%@ targetApp=%@",
+            @"UberDriverBypass 0.27.0 loaded; mode=%@ actualApp=%@ actualOS=%@ targetApp=%@",
             UBReferenceCaptureMode ? @"REFERENCE_CAPTURE" : @"COMPATIBILITY_TEST",
             UBActualAppVersion ?: @"", UBActualOSVersion ?: @"", UBTargetAppVersion]);
         UBInstallNativeCronetHooks();
