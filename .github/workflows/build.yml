@@ -24,7 +24,7 @@ jobs:
         if: runner.os == 'macOS'
         run: python3 tests/test_metadata.py
 
-      - name: Validate v0.27 reference capture
+      - name: Validate v0.28 delayed Cronet capture
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -46,6 +46,8 @@ jobs:
           grep -q 'devices-results' Tweak.xm
           grep -q 'UBInspectIntegrityToken' Tweak.xm
           grep -q 'integrity-token %@ length=' Tweak.xm
+          grep -q 'Cronet retry after %@s installed=%d' Tweak.xm
+          grep -q 'UBNativeCronetHooksInstalled' Tweak.xm
 
       - name: Set up Theos
         uses: Randomblock1/theos-action@v1
@@ -64,7 +66,7 @@ jobs:
           test -n "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
           test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64"
-          test "$(dpkg-deb -f "$deb" Version)" = "0.27.0"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.28.0"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/uberdriver-check"
           dylib="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.dylib"
           filter="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.plist"
@@ -80,8 +82,8 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: ncipollo/release-action@v1
         with:
-          tag: v0.27.0
-          name: UberDriverApp Bypass iOS 16 v0.27.0
+          tag: v0.28.0
+          name: UberDriverApp Bypass iOS 16 v0.28.0
           body: |
             Dual-mode A/B diagnostic build for Uber Driver 4.527.10000 and the known-working 4.584.10000 reference build.
 
@@ -89,7 +91,7 @@ jobs:
 
             Signed integrity material is left untouched. Use REFERENCE_CAPTURE on the build that genuinely goes online so its versionChecksum, envChecksum, envId, libCount and related deviceData can be compared directly with the failing old build.
 
-            Install v0.27.0 on the working Uber Driver 4.585.10000 build, respring, fully kill Uber Driver, reopen it and press Go Online once. Confirm the log says mode=REFERENCE_CAPTURE, then send Documents/UberDriverBypass.log.
+            Install v0.28.0 on the working Uber Driver 4.585.10000 build, respring, fully kill Uber Driver, reopen it and press Go Online once. The build retries the native Cronet logger after launch so the genuine go-online request can be captured without rewriting it.
 
           artifacts: packages/*.deb
           artifactErrorsFailBuild: true
