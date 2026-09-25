@@ -353,7 +353,9 @@ static BOOL UBIsSafeCompatibilityField(NSString *key) {
     return [@[
         @"sourceapp", @"specversion", @"version", @"appvariant",
         @"builduuid", @"buildtype", @"commithash", @"osversion",
-        @"deviceosname", @"deviceosversion", @"versionchecksum", @"envchecksum"
+        @"deviceosname", @"deviceosversion", @"versionchecksum", @"envchecksum",
+        @"envid", @"libcount", @"rooted", @"jailbroken", @"emulator",
+        @"cpuabi", @"appbuild", @"buildnumber", @"binaryversion"
     ] containsObject:k];
 }
 
@@ -392,10 +394,12 @@ static void UBLogSafeCompatibilityJSONFields(id object, NSString *path, NSUInteg
                     NSString *format = @"other";
                     if (UBLooksUUIDString(s)) format = @"uuid";
                     else if (UBLooksHexString(s)) format = @"hex";
+                    NSString *safeChecksum = s ?: @"";
+                    if (safeChecksum.length > 100) safeChecksum = [safeChecksum substringToIndex:100];
                     UBDiagnostic([NSString stringWithFormat:
-                        @"go-online compatibility field %@ type=%@ length=%lu format=%@",
+                        @"go-online compatibility field %@ type=%@ length=%lu format=%@ value=%@",
                         nextPath, NSStringFromClass([value class]),
-                        (unsigned long)(s ? s.length : 0), format]);
+                        (unsigned long)(s ? s.length : 0), format, safeChecksum]);
                 } else if ([value isKindOfClass:NSString.class] ||
                            [value isKindOfClass:NSNumber.class]) {
                     NSString *safeValue = [value description] ?: @"";
@@ -1008,10 +1012,6 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
         if (after == before && before.length) {
             after = UBRewriteOpaqueDeviceIdentityData(before);
         }
-        if (UBIsGoOnlinePath(request.URL) && after.length) {
-            NSUInteger checksumFieldsRemoved = 0;
-            after = UBStripGoOnlineChecksumFields(after, &checksumFieldsRemoved);
-        }
         if (after != before && ![after isEqualToData:before]) {
             copy.HTTPBody = after;
             [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
@@ -1226,10 +1226,6 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
                           UBTargetPathLabel(request.URL)]);
         }
     }
-    if (UBIsGoOnlinePath(request.URL) && updated.length) {
-        NSUInteger checksumFieldsRemoved = 0;
-        updated = UBStripGoOnlineChecksumFields(updated, &checksumFieldsRemoved);
-    }
     NSMutableURLRequest *copy = [UBRewriteRequest(request, NO) mutableCopy];
     if (updated != body && ![updated isEqualToData:body]) [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
     UBDiagnoseGoOnlineVersionIdentity(copy, updated);
@@ -1243,10 +1239,6 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
             UBDiagnostic([NSString stringWithFormat:@"%@ NSURLSession upload body compatibility bytes rewritten",
                           UBTargetPathLabel(request.URL)]);
         }
-    }
-    if (UBIsGoOnlinePath(request.URL) && updated.length) {
-        NSUInteger checksumFieldsRemoved = 0;
-        updated = UBStripGoOnlineChecksumFields(updated, &checksumFieldsRemoved);
     }
     NSMutableURLRequest *copy = [UBRewriteRequest(request, NO) mutableCopy];
     if (updated != body && ![updated isEqualToData:body]) [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
@@ -1333,10 +1325,6 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
     NSData *updated = UBIsUberURL(self.URL) && ![self valueForHTTPHeaderField:@"Content-Encoding"].length ? UBRewriteBody(body) : body;
     if (UBIsUberURL(self.URL) && updated == body && body.length) {
         updated = UBRewriteOpaqueDeviceIdentityData(body);
-    }
-    if (UBIsGoOnlinePath(self.URL) && updated.length) {
-        NSUInteger checksumFieldsRemoved = 0;
-        updated = UBStripGoOnlineChecksumFields(updated, &checksumFieldsRemoved);
     }
     if (updated != body && ![updated isEqualToData:body] && UBIsGoOnlinePath(self.URL)) {
         UBDiagnostic([NSString stringWithFormat:@"%@ NSMutableURLRequest body compatibility bytes rewritten",
@@ -1816,7 +1804,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.20.0 loaded; current App Store version test active");
+        UBDiagnostic(@"UberDriverBypass 0.21.0 loaded; Go Online deviceData inventory active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();
