@@ -429,6 +429,60 @@ static void UBLogSafeCompatibilityJSONFields(id object, NSString *path, NSUInteg
     }
 }
 
+
+static void UBLogGoOnlineDeviceDataInventory(id json) {
+    if (![json isKindOfClass:NSDictionary.class]) return;
+    id requestObject = ((NSDictionary *)json)[@"request"];
+    if (![requestObject isKindOfClass:NSDictionary.class]) return;
+    id deviceObject = ((NSDictionary *)requestObject)[@"deviceData"];
+    if (![deviceObject isKindOfClass:NSDictionary.class]) return;
+
+    NSDictionary *deviceData = (NSDictionary *)deviceObject;
+    NSArray *keys = [[deviceData allKeys] sortedArrayUsingComparator:^NSComparisonResult(id a, id b) {
+        return [[a description] compare:[b description]];
+    }];
+
+    NSMutableArray *keyNames = [NSMutableArray arrayWithCapacity:keys.count];
+    for (id keyObject in keys) [keyNames addObject:[keyObject description] ?: @"?"];
+    UBDiagnostic([NSString stringWithFormat:
+        @"go-online deviceData inventory count=%lu keys=%@",
+        (unsigned long)keys.count, [keyNames componentsJoinedByString:@","]]);
+
+    NSUInteger logged = 0;
+    for (id keyObject in keys) {
+        if (logged >= 60) break;
+        NSString *key = [keyObject isKindOfClass:NSString.class] ? keyObject : [keyObject description];
+        id value = deviceData[keyObject];
+        NSString *normalized = UBNormalizedKey(key ?: @"");
+        BOOL sensitive = UBSensitiveName(key) ||
+            [@[@"deviceids", @"deviceid", @"devicename", @"devicealtitude",
+               @"devicehaccuracy", @"devicevaccuracy", @"latitude", @"longitude"]
+             containsObject:normalized];
+
+        if (sensitive) {
+            NSUInteger count = 0;
+            if ([value respondsToSelector:@selector(count)]) count = (NSUInteger)[value count];
+            UBDiagnostic([NSString stringWithFormat:
+                @"go-online deviceData item %@ type=%@%@",
+                key, NSStringFromClass([value class]),
+                count ? [NSString stringWithFormat:@" count=%lu", (unsigned long)count] : @""]);
+        } else if ([value isKindOfClass:NSString.class] || [value isKindOfClass:NSNumber.class]) {
+            NSString *safeValue = [value description] ?: @"";
+            if (safeValue.length > 120) safeValue = [safeValue substringToIndex:120];
+            UBDiagnostic([NSString stringWithFormat:
+                @"go-online deviceData item %@=%@", key, safeValue]);
+        } else {
+            NSUInteger count = 0;
+            if ([value respondsToSelector:@selector(count)]) count = (NSUInteger)[value count];
+            UBDiagnostic([NSString stringWithFormat:
+                @"go-online deviceData item %@ type=%@%@",
+                key, NSStringFromClass([value class]),
+                count ? [NSString stringWithFormat:@" count=%lu", (unsigned long)count] : @""]);
+        }
+        logged++;
+    }
+}
+
 static void UBDiagnoseGoOnlineVersionIdentity(NSURLRequest *request, NSData *body) {
     if (!UBIsGoOnlinePath(request.URL)) return;
 
@@ -503,6 +557,8 @@ static void UBDiagnoseGoOnlineVersionIdentity(NSURLRequest *request, NSData *bod
         UBLogSafeCompatibilityJSONFields(json, @"$", 0, &compatibilityCount);
         UBDiagnostic([NSString stringWithFormat:@"go-online compatibility fields logged=%lu",
                       (unsigned long)compatibilityCount]);
+
+        UBLogGoOnlineDeviceDataInventory(json);
     } else {
         UBDiagnostic([NSString stringWithFormat:@"go-online request body non-JSON bytes=%lu",
                       (unsigned long)body.length]);
@@ -1052,6 +1108,62 @@ static void UBLogSuspiciousForceUpgradeJSONPaths(id object, NSString *path, NSUI
     }
 }
 
+
+static BOOL UBForceUpgradeDiagnosticKey(NSString *key) {
+    NSString *k = UBNormalizedKey(key ?: @"");
+    return [k containsString:@"version"] ||
+           [k containsString:@"upgrade"] ||
+           [k containsString:@"blocker"] ||
+           [k containsString:@"type"] ||
+           [k containsString:@"subtype"] ||
+           [k containsString:@"code"] ||
+           [k containsString:@"reason"] ||
+           [k containsString:@"message"] ||
+           [k containsString:@"title"] ||
+           [k containsString:@"url"];
+}
+
+static void UBLogForceUpgradeResponseDetails(id object, NSString *path, NSUInteger depth, NSUInteger *count) {
+    if (!object || depth > 10 || !count || *count >= 50) return;
+
+    if ([object isKindOfClass:NSDictionary.class]) {
+        NSDictionary *dictionary = (NSDictionary *)object;
+        for (id keyObject in dictionary) {
+            if (*count >= 50) break;
+            NSString *key = [keyObject isKindOfClass:NSString.class] ? keyObject : [keyObject description];
+            id value = dictionary[keyObject];
+            NSString *nextPath = path.length ? [path stringByAppendingFormat:@".%@", key] : key;
+
+            if (UBForceUpgradeDiagnosticKey(key)) {
+                (*count)++;
+                if ([value isKindOfClass:NSString.class] || [value isKindOfClass:NSNumber.class]) {
+                    NSString *safeValue = [value description] ?: @"";
+                    if (safeValue.length > 180) safeValue = [safeValue substringToIndex:180];
+                    UBDiagnostic([NSString stringWithFormat:
+                        @"go-online blocker detail %@=%@", nextPath, safeValue]);
+                } else {
+                    UBDiagnostic([NSString stringWithFormat:
+                        @"go-online blocker detail %@ type=%@",
+                        nextPath, NSStringFromClass([value class])]);
+                }
+            }
+
+            UBLogForceUpgradeResponseDetails(value, nextPath, depth + 1, count);
+        }
+        return;
+    }
+
+    if ([object isKindOfClass:NSArray.class]) {
+        NSArray *array = (NSArray *)object;
+        NSUInteger limit = MIN(array.count, (NSUInteger)50);
+        for (NSUInteger i = 0; i < limit && *count < 50; i++) {
+            UBLogForceUpgradeResponseDetails(array[i],
+                [path stringByAppendingFormat:@"[%lu]", (unsigned long)i],
+                depth + 1, count);
+        }
+    }
+}
+
 static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *label) {
     if (!data.length || data.length > 2 * 1024 * 1024 || !label.length) return data;
 
@@ -1065,6 +1177,12 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
     @try {
         json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
         if (json) {
+            NSUInteger blockerDetails = 0;
+            UBLogForceUpgradeResponseDetails(json, @"$", 0, &blockerDetails);
+            if (blockerDetails) {
+                UBDiagnostic([NSString stringWithFormat:
+                    @"go-online blocker details logged=%lu", (unsigned long)blockerDetails]);
+            }
             id filtered = UBFilterForceUpgradeOnlineBlockers(json, 0, &removed);
             if (removed && [NSJSONSerialization isValidJSONObject:filtered]) {
                 encoded = [NSJSONSerialization dataWithJSONObject:filtered options:0 error:nil];
@@ -1742,7 +1860,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.21.0 loaded; Go Online deviceData inventory active");
+        UBDiagnostic(@"UberDriverBypass 0.22.0 loaded; blocker + deviceData diagnostics active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();
