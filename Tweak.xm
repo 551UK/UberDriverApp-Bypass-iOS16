@@ -32,7 +32,7 @@ static BOOL UBIsMainBundle(NSBundle *bundle) {
 static void UBDiagnostic(NSString *event) {
     static NSUInteger count = 0;
     @synchronized (UBTargetAppVersion) {
-        if (count++ >= 200) return;
+        if (count++ >= 400) return;
         NSString *path = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"];
         NSString *line = [NSString stringWithFormat:@"%@ %@\n", NSDate.date, event];
         NSFileHandle *file = [NSFileHandle fileHandleForWritingAtPath:path];
@@ -964,6 +964,157 @@ static NSString *UBTargetPathLabel(NSURL *url) {
     return nil;
 }
 
+static NSString *UBAttestationPathLabel(NSURL *url) {
+    NSString *path = url.path.lowercaseString ?: @"";
+    if ([path containsString:@"/rt/devices/task"]) return @"devices-task";
+    if ([path containsString:@"/rt/devices/results"]) return @"devices-results";
+    if ([path containsString:@"/rt/devices/exemption"]) return @"devices-exemption";
+    return nil;
+}
+
+static BOOL UBAttestationSensitiveKey(NSString *key) {
+    NSString *k = UBNormalizedKey(key ?: @"");
+    return [k containsString:@"authorization"] ||
+           [k containsString:@"token"] ||
+           [k containsString:@"cookie"] ||
+           [k containsString:@"session"] ||
+           [k containsString:@"secret"] ||
+           [k containsString:@"signature"] ||
+           [k containsString:@"challenge"] ||
+           [k containsString:@"nonce"] ||
+           [k containsString:@"proof"] ||
+           [k containsString:@"assertion"] ||
+           [k containsString:@"credential"] ||
+           [k containsString:@"certificate"] ||
+           [k containsString:@"publickey"] ||
+           [k containsString:@"privatekey"] ||
+           [k containsString:@"deviceid"] ||
+           [k containsString:@"userid"] ||
+           [k containsString:@"driverid"] ||
+           [k containsString:@"latitude"] ||
+           [k containsString:@"longitude"] ||
+           [k containsString:@"location"] ||
+           [k containsString:@"ipaddress"];
+}
+
+static BOOL UBAttestationSafeScalarKey(NSString *key) {
+    NSString *k = UBNormalizedKey(key ?: @"");
+    return [@[
+        @"status", @"state", @"result", @"decision", @"verdict", @"reason",
+        @"code", @"type", @"typestring", @"subtype", @"subtypestring",
+        @"category", @"action", @"required", @"enabled", @"supported",
+        @"success", @"eligible", @"exempt", @"exemption", @"rooted",
+        @"jailbroken", @"emulator", @"version", @"appversion", @"osversion",
+        @"deviceosversion", @"deviceosname", @"sourceapp"
+    ] containsObject:k];
+}
+
+static NSUInteger UBCollectionCount(id value) {
+    if ([value respondsToSelector:@selector(count)]) return (NSUInteger)[value count];
+    return 0;
+}
+
+static void UBLogAttestationJSONSummary(id object, NSString *path, NSUInteger depth, NSUInteger *count) {
+    if (!object || depth > 10 || !count || *count >= 80) return;
+
+    if ([object isKindOfClass:NSDictionary.class]) {
+        NSDictionary *dictionary = (NSDictionary *)object;
+
+        if (depth <= 2) {
+            NSArray *keys = [[dictionary allKeys] sortedArrayUsingComparator:^NSComparisonResult(id a, id b) {
+                return [[a description] compare:[b description]];
+            }];
+            NSMutableArray *names = [NSMutableArray arrayWithCapacity:keys.count];
+            for (id keyObject in keys) [names addObject:[keyObject description] ?: @"?"];
+            UBDiagnostic([NSString stringWithFormat:
+                @"attestation JSON keys path=%@ count=%lu keys=%@",
+                path, (unsigned long)keys.count, [names componentsJoinedByString:@","]]);
+        }
+
+        for (id keyObject in dictionary) {
+            if (*count >= 80) break;
+            NSString *key = [keyObject isKindOfClass:NSString.class] ? keyObject : [keyObject description];
+            id value = dictionary[keyObject];
+            NSString *nextPath = path.length ? [path stringByAppendingFormat:@".%@", key] : key;
+
+            if (UBAttestationSensitiveKey(key)) {
+                (*count)++;
+                NSUInteger n = UBCollectionCount(value);
+                NSString *extra = n ? [NSString stringWithFormat:@" count=%lu", (unsigned long)n] : @"";
+                if ([value isKindOfClass:NSString.class]) {
+                    extra = [NSString stringWithFormat:@" length=%lu", (unsigned long)[(NSString *)value length]];
+                }
+                UBDiagnostic([NSString stringWithFormat:
+                    @"attestation field %@ redacted type=%@%@",
+                    nextPath, NSStringFromClass([value class]), extra]);
+            } else if (UBAttestationSafeScalarKey(key) &&
+                       ([value isKindOfClass:NSString.class] ||
+                        [value isKindOfClass:NSNumber.class])) {
+                (*count)++;
+                NSString *safeValue = [value description] ?: @"";
+                if (safeValue.length > 160) safeValue = [safeValue substringToIndex:160];
+                UBDiagnostic([NSString stringWithFormat:
+                    @"attestation field %@=%@", nextPath, safeValue]);
+            } else if (depth <= 2) {
+                (*count)++;
+                NSUInteger n = UBCollectionCount(value);
+                NSString *extra = n ? [NSString stringWithFormat:@" count=%lu", (unsigned long)n] : @"";
+                UBDiagnostic([NSString stringWithFormat:
+                    @"attestation field %@ type=%@%@",
+                    nextPath, NSStringFromClass([value class]), extra]);
+            }
+
+            UBLogAttestationJSONSummary(value, nextPath, depth + 1, count);
+        }
+        return;
+    }
+
+    if ([object isKindOfClass:NSArray.class]) {
+        NSArray *array = (NSArray *)object;
+        NSUInteger limit = MIN(array.count, (NSUInteger)30);
+        for (NSUInteger i = 0; i < limit && *count < 80; i++) {
+            UBLogAttestationJSONSummary(array[i],
+                [path stringByAppendingFormat:@"[%lu]", (unsigned long)i],
+                depth + 1, count);
+        }
+    }
+}
+
+static void UBDiagnoseAttestationData(NSData *data, NSString *label, NSString *direction) {
+    if (!label.length) return;
+    if (!data.length) {
+        UBDiagnostic([NSString stringWithFormat:@"%@ %@ body bytes=0", label, direction]);
+        return;
+    }
+    if (data.length > 2 * 1024 * 1024) {
+        UBDiagnostic([NSString stringWithFormat:@"%@ %@ body too-large bytes=%lu",
+                      label, direction, (unsigned long)data.length]);
+        return;
+    }
+
+    BOOL previousSkip = UBSkipJSONHooks;
+    UBSkipJSONHooks = YES;
+    id json = nil;
+    @try {
+        json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    } @finally {
+        UBSkipJSONHooks = previousSkip;
+    }
+
+    if (!json) {
+        UBDiagnostic([NSString stringWithFormat:@"%@ %@ body non-JSON bytes=%lu",
+                      label, direction, (unsigned long)data.length]);
+        return;
+    }
+
+    UBDiagnostic([NSString stringWithFormat:@"%@ %@ JSON root=%@ bytes=%lu",
+                  label, direction, NSStringFromClass([json class]), (unsigned long)data.length]);
+    NSUInteger count = 0;
+    UBLogAttestationJSONSummary(json, @"$", 0, &count);
+    UBDiagnostic([NSString stringWithFormat:@"%@ %@ diagnostic fields logged=%lu",
+                  label, direction, (unsigned long)count]);
+}
+
 static NSData *UBRewriteBody(NSData *body) {
     // Never decode compressed bodies, streams, protobuf or file uploads as text.
     if (!body.length || body.length > 2 * 1024 * 1024) return body;
@@ -1024,6 +1175,18 @@ static NSURLRequest *UBRewriteRequest(NSURLRequest *request, BOOL rewriteBody) {
     if (UBIsGoOnlinePath(request.URL) && rewriteBody) {
         NSURLRequest *finalRequest = changed ? copy : request;
         UBDiagnoseGoOnlineVersionIdentity(finalRequest, finalRequest.HTTPBody);
+    }
+
+    if (rewriteBody) {
+        NSURLRequest *finalRequest = changed ? copy : request;
+        NSString *attestationLabel = UBAttestationPathLabel(finalRequest.URL);
+        if (attestationLabel.length) {
+            UBDiagnostic([NSString stringWithFormat:
+                @"%@ Foundation request method=%@ headers=%lu",
+                attestationLabel, finalRequest.HTTPMethod ?: @"",
+                (unsigned long)finalRequest.allHTTPHeaderFields.count]);
+            UBDiagnoseAttestationData(finalRequest.HTTPBody, attestationLabel, @"request");
+        }
     }
 
     return changed ? copy : request;
@@ -1218,10 +1381,21 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
     NSURLRequest *updatedRequest = UBRewriteRequest(request, YES);
     BOOL uberRequest = UBIsUberURL(request.URL);
     NSString *label = UBTargetPathLabel(request.URL);
+    NSString *attestationLabel = UBAttestationPathLabel(request.URL);
     void (^wrapped)(NSData *, NSURLResponse *, NSError *) = handler;
 
     if (uberRequest && handler) {
         wrapped = ^(NSData *data, NSURLResponse *response, NSError *error) {
+            if (attestationLabel.length) {
+                NSString *mime = response.MIMEType ?: @"";
+                NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class]
+                    ? ((NSHTTPURLResponse *)response).statusCode : 0;
+                UBDiagnostic([NSString stringWithFormat:
+                    @"%@ Foundation response status=%ld bytes=%lu mime=%@ error=%d",
+                    attestationLabel, (long)status, (unsigned long)data.length, mime, error ? 1 : 0]);
+                if (!error) UBDiagnoseAttestationData(data, attestationLabel, @"response");
+            }
+
             if (label.length) {
                 NSString *mime = response.MIMEType ?: @"";
                 NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class]
@@ -1285,6 +1459,14 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
     NSMutableURLRequest *copy = [UBRewriteRequest(request, NO) mutableCopy];
     if (updated != body && ![updated isEqualToData:body]) [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
     UBDiagnoseGoOnlineVersionIdentity(copy, updated);
+    NSString *attestationLabel = UBAttestationPathLabel(copy.URL);
+    if (attestationLabel.length) {
+        UBDiagnostic([NSString stringWithFormat:
+            @"%@ NSURLSession upload request method=%@ headers=%lu",
+            attestationLabel, copy.HTTPMethod ?: @"",
+            (unsigned long)copy.allHTTPHeaderFields.count]);
+        UBDiagnoseAttestationData(updated, attestationLabel, @"request");
+    }
     return %orig(copy, updated);
 }
 - (NSURLSessionUploadTask *)uploadTaskWithRequest:(NSURLRequest *)request fromData:(NSData *)body completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))handler {
@@ -1299,7 +1481,31 @@ static NSData *UBFilterFoundationGoOnlineResponseData(NSData *data, NSString *la
     NSMutableURLRequest *copy = [UBRewriteRequest(request, NO) mutableCopy];
     if (updated != body && ![updated isEqualToData:body]) [copy setValue:nil forHTTPHeaderField:@"Content-Length"];
     UBDiagnoseGoOnlineVersionIdentity(copy, updated);
-    return %orig(copy, updated, handler);
+
+    NSString *attestationLabel = UBAttestationPathLabel(copy.URL);
+    if (attestationLabel.length) {
+        UBDiagnostic([NSString stringWithFormat:
+            @"%@ NSURLSession upload request method=%@ headers=%lu",
+            attestationLabel, copy.HTTPMethod ?: @"",
+            (unsigned long)copy.allHTTPHeaderFields.count]);
+        UBDiagnoseAttestationData(updated, attestationLabel, @"request");
+    }
+
+    void (^wrapped)(NSData *, NSURLResponse *, NSError *) = handler;
+    if (attestationLabel.length && handler) {
+        wrapped = ^(NSData *data, NSURLResponse *response, NSError *error) {
+            NSString *mime = response.MIMEType ?: @"";
+            NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class]
+                ? ((NSHTTPURLResponse *)response).statusCode : 0;
+            UBDiagnostic([NSString stringWithFormat:
+                @"%@ NSURLSession upload response status=%ld bytes=%lu mime=%@ error=%d",
+                attestationLabel, (long)status, (unsigned long)data.length, mime, error ? 1 : 0]);
+            if (!error) UBDiagnoseAttestationData(data, attestationLabel, @"response");
+            handler(data, response, error);
+        };
+    }
+
+    return %orig(copy, updated, wrapped);
 }
 %end
 
@@ -1860,7 +2066,7 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void **)&UBOrigSysctlByName);
 
         [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
-        UBDiagnostic(@"UberDriverBypass 0.22.0 loaded; blocker + deviceData diagnostics active");
+        UBDiagnostic(@"UberDriverBypass 0.23.0 loaded; device attestation diagnostics active");
         UBInstallNativeCronetHooks();
         %init;
         UBInstallDriverChecksModelHooks();
