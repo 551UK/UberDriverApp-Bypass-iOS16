@@ -24,7 +24,7 @@ jobs:
         if: runner.os == 'macOS'
         run: python3 tests/test_metadata.py
 
-      - name: Validate v0.25 metadata profile
+      - name: Validate v0.26 reference capture
         if: runner.os == 'Linux'
         shell: bash
         run: |
@@ -37,7 +37,8 @@ jobs:
           grep -q '@"versionchecksum", @"envchecksum"' Tweak.xm
           grep -q '@"envid"' Tweak.xm
           grep -q 'format=%@ value=%@' Tweak.xm
-          grep -q 'known-working metadata profile active' Tweak.xm
+          grep -q 'mode=%@ actualApp=%@ actualOS=%@ targetApp=%@' Tweak.xm
+          grep -q 'reference capture mode active' Tweak.xm
           grep -q 'go-online deviceData inventory count=' Tweak.xm
           grep -q 'go-online blocker detail' Tweak.xm
           grep -q 'UBAttestationPathLabel' Tweak.xm
@@ -63,7 +64,7 @@ jobs:
           test -n "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
           test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64"
-          test "$(dpkg-deb -f "$deb" Version)" = "0.25.0"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.26.0"
           dpkg-deb -x "$deb" "$RUNNER_TEMP/uberdriver-check"
           dylib="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.dylib"
           filter="$RUNNER_TEMP/uberdriver-check/var/jb/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass.plist"
@@ -79,16 +80,16 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: ncipollo/release-action@v1
         with:
-          tag: v0.25.0
-          name: UberDriverApp Bypass iOS 16 v0.25.0
+          tag: v0.26.0
+          name: UberDriverApp Bypass iOS 16 v0.26.0
           body: |
-            Known-working metadata profile A/B test for Uber Driver 4.527.10000.
+            Dual-mode A/B diagnostic build for Uber Driver 4.527.10000 and the known-working 4.584.10000 reference build.
 
-            v0.25.0 changes only ordinary app/OS compatibility metadata to the profile from the newer working IPA previously compared: Uber Driver 4.584.10000, iOS 17.0, OS build 21A329 and UBContinuousVersion 326106.1.
+            On Uber Driver 4.527.10000, v0.26.0 keeps the existing ordinary compatibility metadata profile. On Uber Driver 4.584.10000, it enters REFERENCE_CAPTURE mode: request/response rewriting is disabled and the same go-online compatibility fields are logged untouched.
 
-            Signed integrity material is left untouched. The purpose of this build is to test whether the backend rejection is caused by an inconsistent visible metadata profile.
+            Signed integrity material is left untouched. Use REFERENCE_CAPTURE on the build that genuinely goes online so its versionChecksum, envChecksum, envId, libCount and related deviceData can be compared directly with the failing old build.
 
-            Install v0.25.0, respring, fully kill Uber Driver, reopen it, wait a few seconds and press Go Online once. Then send Documents/UberDriverBypass.log.
+            Install v0.26.0 on the working Uber Driver 4.584.10000 build, respring, fully kill Uber Driver, reopen it and press Go Online once. Confirm the log says mode=REFERENCE_CAPTURE, then send Documents/UberDriverBypass.log.
 
           artifacts: packages/*.deb
           artifactErrorsFailBuild: true
