@@ -1324,10 +1324,11 @@ static void UBLogAttestationRequestHeaders(NSURLRequest *request, NSString *labe
 
     UBDiagnostic([NSString stringWithFormat:
         @"%@ header comparison presence x-uber-device-year-class=%d x-uber-token=%d",
-        [headers objectForKey:@"x-uber-device-year-class"] != nil ||
-            [headers objectForKey:@"X-Uber-Device-Year-Class"] != nil,
-        [headers objectForKey:@"x-uber-token"] != nil ||
-            [headers objectForKey:@"X-Uber-Token"] != nil]);
+        label,
+        ([headers objectForKey:@"x-uber-device-year-class"] != nil ||
+            [headers objectForKey:@"X-Uber-Device-Year-Class"] != nil) ? 1 : 0,
+        ([headers objectForKey:@"x-uber-token"] != nil ||
+            [headers objectForKey:@"X-Uber-Token"] != nil) ? 1 : 0]);
 
     for (NSString *key in names) {
         if (!UBIsSafeAttestationIdentityHeader(key)) continue;
