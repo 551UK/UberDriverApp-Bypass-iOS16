@@ -1,0 +1,39 @@
+name: Build Swift iOS16 compatibility shim
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'compat/**'
+      - '.github/workflows/build-compat-shim.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Theos
+        uses: Randomblock1/theos-action@v1
+        with:
+          theos-sdks: https://github.com/theos/sdks
+          theos-sdks-branch: master
+      - name: Show selected Swift runtime stub
+        shell: bash
+        run: |
+          set -e
+          find "$THEOS/sdks" -path '*/usr/lib/swift/libswiftCore.tbd' -print | sort -V | tail -5
+      - name: Build compatibility dylib
+        working-directory: compat
+        run: make clean all FINALPACKAGE=1
+      - name: Collect dylib
+        shell: bash
+        run: |
+          set -euo pipefail
+          dylib="$(find compat/.theos -name 'CompatSwiftCore.dylib' -type f -print -quit)"
+          test -n "$dylib"
+          cp "$dylib" CompatSwiftCore.dylib
+          file CompatSwiftCore.dylib
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CompatSwiftCore
+          path: CompatSwiftCore.dylib
