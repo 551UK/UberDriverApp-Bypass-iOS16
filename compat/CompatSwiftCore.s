@@ -50,29 +50,35 @@
     ldr  x0, [x0, "_$syXlN"@GOTPAGEOFF]
     b "_$sSa034_makeUniqueAndReserveCapacityIfNotB0yyF"
 
-// Remaining private pre-specializations are exported to satisfy dyld.
-// Each gets a unique BRK so an actual call identifies the next adapter.
+// Adapt the remaining AnyObject pre-specializations to their generic
+// iOS 16 Swift runtime entry points. Register placement is the Swift ABI:
+// metadata is appended after the explicit/self value arguments.
 .globl "_$ss12_ArrayBufferV19_getElementSlowPathyyXlSiFyXl_Ts5"
 "_$ss12_ArrayBufferV19_getElementSlowPathyyXlSiFyXl_Ts5":
-    brk #0x403
-    ret
+    adrp x2, "_$syXlN"@GOTPAGE
+    ldr  x2, [x2, "_$syXlN"@GOTPAGEOFF]
+    b "_$ss12_ArrayBufferV19_getElementSlowPathyyXlSiF"
 
 .globl "_$sSa16_createNewBuffer14bufferIsUnique15minimumCapacity13growForAppendySb_SiSbtFyXl_Ts5"
 "_$sSa16_createNewBuffer14bufferIsUnique15minimumCapacity13growForAppendySb_SiSbtFyXl_Ts5":
-    brk #0x404
-    ret
+    adrp x3, "_$syXlN"@GOTPAGE
+    ldr  x3, [x3, "_$syXlN"@GOTPAGEOFF]
+    b "_$sSa16_createNewBuffer14bufferIsUnique15minimumCapacity13growForAppendySb_SiSbtF"
 
 .globl "_$ss12_ArrayBufferV20_consumeAndCreateNew14bufferIsUnique15minimumCapacity13growForAppendAByxGSb_SiSbtFyXl_Ts5"
 "_$ss12_ArrayBufferV20_consumeAndCreateNew14bufferIsUnique15minimumCapacity13growForAppendAByxGSb_SiSbtFyXl_Ts5":
-    brk #0x407
-    ret
+    adrp x4, "_$syXlN"@GOTPAGE
+    ldr  x4, [x4, "_$syXlN"@GOTPAGEOFF]
+    b "_$ss12_ArrayBufferV20_consumeAndCreateNew14bufferIsUnique15minimumCapacity13growForAppendAByxGSb_SiSbtF"
 
 .globl "_$ss22_ContiguousArrayBufferV20_consumeAndCreateNew14bufferIsUnique15minimumCapacity13growForAppendAByxGSb_SiSbtFyXl_Ts5"
 "_$ss22_ContiguousArrayBufferV20_consumeAndCreateNew14bufferIsUnique15minimumCapacity13growForAppendAByxGSb_SiSbtFyXl_Ts5":
-    brk #0x408
-    ret
+    adrp x4, "_$syXlN"@GOTPAGE
+    ldr  x4, [x4, "_$syXlN"@GOTPAGEOFF]
+    b "_$ss22_ContiguousArrayBufferV20_consumeAndCreateNew14bufferIsUnique15minimumCapacity13growForAppendAByxGSb_SiSbtF"
 
 .globl "_$ss12_ArrayBufferV13_copyContents12initializings16IndexingIteratorVyAByxGG_SitSryxG_tFyXl_Ts5"
 "_$ss12_ArrayBufferV13_copyContents12initializings16IndexingIteratorVyAByxGG_SitSryxG_tFyXl_Ts5":
-    brk #0x409
-    ret
+    adrp x3, "_$syXlN"@GOTPAGE
+    ldr  x3, [x3, "_$syXlN"@GOTPAGEOFF]
+    b "_$ss12_ArrayBufferV13_copyContents12initializings16IndexingIteratorVyAByxGG_SitSryxG_tF"
