@@ -94,3 +94,102 @@
     mov x0, xzr
     ret
 
+// iOS 17+ trait-definition metadata compatibility
+// These newer UIKit trait-definition types do not exist on iOS 16.
+// The registration APIs are shimmed as no-ops, so the callers only need
+// valid Swift metadata/witness placeholders while constructing arguments.
+
+// Reuse a real Swift protocol descriptor for the otherwise unavailable
+// UITraitDefinition existential metadata.
+.globl "_$s5UIKit17UITraitDefinitionMp"
+.set "_$s5UIKit17UITraitDefinitionMp", "_$sSQMp"
+
+// Metadata accessors: expose Int metadata (single-word value semantics are
+// sufficient for these trait-definition metatypes because the registration
+// functions never inspect them).
+.text
+.p2align 2
+
+.globl "_$s5UIKit26UITraitHorizontalSizeClassVMa"
+"_$s5UIKit26UITraitHorizontalSizeClassVMa":
+    adrp x0, "_$sSiN"@GOTPAGE
+    ldr  x0, [x0, "_$sSiN"@GOTPAGEOFF]
+    mov  x1, xzr
+    ret
+
+.globl "_$s5UIKit24UITraitVerticalSizeClassVMa"
+"_$s5UIKit24UITraitVerticalSizeClassVMa":
+    adrp x0, "_$sSiN"@GOTPAGE
+    ldr  x0, [x0, "_$sSiN"@GOTPAGEOFF]
+    mov  x1, xzr
+    ret
+
+.globl "_$s5UIKit25UITraitUserInterfaceStyleVMa"
+"_$s5UIKit25UITraitUserInterfaceStyleVMa":
+    adrp x0, "_$sSiN"@GOTPAGE
+    ldr  x0, [x0, "_$sSiN"@GOTPAGEOFF]
+    mov  x1, xzr
+    ret
+
+.globl "_$s5UIKit23UITraitLegibilityWeightVMa"
+"_$s5UIKit23UITraitLegibilityWeightVMa":
+    adrp x0, "_$sSiN"@GOTPAGE
+    ldr  x0, [x0, "_$sSiN"@GOTPAGEOFF]
+    mov  x1, xzr
+    ret
+
+.globl "_$s5UIKit16UITraitOverridesVMa"
+"_$s5UIKit16UITraitOverridesVMa":
+    adrp x0, "_$sSiN"@GOTPAGE
+    ldr  x0, [x0, "_$sSiN"@GOTPAGEOFF]
+    mov  x1, xzr
+    ret
+
+// UITraitOverrides operations are unavailable before iOS 17.
+// Return an empty word from the getter and ignore mutations.
+.globl "_$sSo6UIViewC5UIKitE14traitOverridesAC07UITraitD0Vvg"
+"_$sSo6UIViewC5UIKitE14traitOverridesAC07UITraitD0Vvg":
+    mov x0, xzr
+    ret
+
+.globl "_$sSo6UIViewC5UIKitE14traitOverridesAC07UITraitD0Vvs"
+"_$sSo6UIViewC5UIKitE14traitOverridesAC07UITraitD0Vvs":
+    ret
+
+.globl "_$s5UIKit16UITraitOverridesV6removeyyAA0B10Definition_pXpF"
+"_$s5UIKit16UITraitOverridesV6removeyyAA0B10Definition_pXpF":
+    ret
+
+// Instance self for this Swift extension is carried in x20.
+// Preserve the current collection while ignoring the iOS 17 mutable-traits
+// closure. objc_retain gives the returned object normal owned lifetime.
+.globl "_$sSo17UITraitCollectionC5UIKitE15modifyingTraitsyAByAC09UIMutableE0_pzXEF"
+"_$sSo17UITraitCollectionC5UIKitE15modifyingTraitsyAByAC09UIMutableE0_pzXEF":
+    mov x0, x20
+    b _objc_retain
+
+// The witness-table values are only packaged into trait-definition existential
+// arguments which are consumed by our no-op registration shims.
+.section __DATA,__data
+.p2align 3
+
+.globl "_$s5UIKit26UITraitHorizontalSizeClassVAA0B10DefinitionAAWP"
+"_$s5UIKit26UITraitHorizontalSizeClassVAA0B10DefinitionAAWP":
+    .quad 0, 0, 0, 0
+
+.globl "_$s5UIKit24UITraitVerticalSizeClassVAA0B10DefinitionAAWP"
+"_$s5UIKit24UITraitVerticalSizeClassVAA0B10DefinitionAAWP":
+    .quad 0, 0, 0, 0
+
+.globl "_$s5UIKit25UITraitUserInterfaceStyleVAA0B10DefinitionAAWP"
+"_$s5UIKit25UITraitUserInterfaceStyleVAA0B10DefinitionAAWP":
+    .quad 0, 0, 0, 0
+
+.globl "_$s5UIKit23UITraitLegibilityWeightVAA0B10DefinitionAAWP"
+"_$s5UIKit23UITraitLegibilityWeightVAA0B10DefinitionAAWP":
+    .quad 0, 0, 0, 0
+
+.globl "_$s5UIKit16UITraitOverridesVAA15UIMutableTraitsAAWP"
+"_$s5UIKit16UITraitOverridesVAA15UIMutableTraitsAAWP":
+    .quad 0, 0, 0, 0
+
