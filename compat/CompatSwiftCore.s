@@ -199,3 +199,17 @@
 "_$s5UIKit16UITraitOverridesVAA15UIMutableTraitsAAWP":
     .quad 0, 0, 0, 0
 
+// iOS 18 popover source-item compatibility
+// UIPopoverPresentationControllerSourceItem.frame(in:) is unavailable on iOS 16.
+// CGRect? has a 32-byte CGRect payload plus a single-payload enum tag.
+// Return .none so callers fall back to legacy sourceView/sourceRect handling.
+.text
+.p2align 2
+.globl "_$sSo41UIPopoverPresentationControllerSourceItemP5UIKitE5frame2inSo6CGRectVSgSo6UIViewC_tF"
+"_$sSo41UIPopoverPresentationControllerSourceItemP5UIKitE5frame2inSo6CGRectVSgSo6UIViewC_tF":
+    stp xzr, xzr, [x8]
+    stp xzr, xzr, [x8, #16]
+    mov w9, #1
+    strb w9, [x8, #32]
+    ret
+
