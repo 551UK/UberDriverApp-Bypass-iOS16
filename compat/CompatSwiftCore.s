@@ -166,7 +166,7 @@
 .globl "_$sSo17UITraitCollectionC5UIKitE15modifyingTraitsyAByAC09UIMutableE0_pzXEF"
 "_$sSo17UITraitCollectionC5UIKitE15modifyingTraitsyAByAC09UIMutableE0_pzXEF":
     mov x0, x20
-    b _objc_retain
+    ret
 
 // The witness-table values are only packaged into trait-definition existential
 // arguments which are consumed by our no-op registration shims.
