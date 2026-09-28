@@ -101,8 +101,14 @@
 
 // Reuse a real Swift protocol descriptor for the otherwise unavailable
 // UITraitDefinition existential metadata.
+.section __DATA,__data
+.p2align 3
 .globl "_$s5UIKit17UITraitDefinitionMp"
-.set "_$s5UIKit17UITraitDefinitionMp", "_$sSQMp"
+"_$s5UIKit17UITraitDefinitionMp":
+    .quad 0, 0, 0, 0
+
+.text
+.p2align 2
 
 // Metadata accessors: expose Int metadata (single-word value semantics are
 // sufficient for these trait-definition metatypes because the registration
