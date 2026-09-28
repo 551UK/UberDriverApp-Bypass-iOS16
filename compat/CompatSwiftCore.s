@@ -213,3 +213,13 @@
     strb w9, [x8, #32]
     ret
 
+// Opaque-result descriptor aliases for back-deployed SwiftUI onChange
+// The wrapper implementations are compiled in the CompatSwiftCore module,
+// while Carbon imports the opaque descriptors using SwiftUI's ABI names.
+// Alias those public ABI names to the descriptors generated for our wrappers.
+.globl "_$s7SwiftUI4ViewPAAE8onChange2of7initial_Qrqd___Sbyqd___qd__tctSQRd__lFQOMQ"
+.set "_$s7SwiftUI4ViewPAAE8onChange2of7initial_Qrqd___Sbyqd___qd__tctSQRd__lFQOMQ", "_$s7SwiftUI4ViewP06CompatA4CoreE15ub_onChangePair2of7initial_Qrqd___Sbyqd___qd__tctSQRd__lFQOMQ"
+
+.globl "_$s7SwiftUI4ViewPAAE8onChange2of7initial_Qrqd___SbyyctSQRd__lFQOMQ"
+.set "_$s7SwiftUI4ViewPAAE8onChange2of7initial_Qrqd___SbyyctSQRd__lFQOMQ", "_$s7SwiftUI4ViewP06CompatA4CoreE15ub_onChangeZero2of7initial_Qrqd___SbyyctSQRd__lFQOMQ"
+
