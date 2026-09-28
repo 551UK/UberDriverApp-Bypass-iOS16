@@ -79,3 +79,18 @@
     adrp x3, "_$syXlN"@GOTPAGE
     ldr  x3, [x3, "_$syXlN"@GOTPAGEOFF]
     b "_$ss12_ArrayBufferV13_copyContents12initializings16IndexingIteratorVyAByxGG_SitSryxG_tF"
+
+// iOS 17+ UIKit trait-change registration compatibility.
+// iOS 16 does not provide UIViewController.registerForTraitChanges.
+// Returning nil makes registration a no-op; callers may safely retain/release
+// or message the returned Objective-C protocol object as nil.
+.globl "_$sSo16UIViewControllerC5UIKitE23registerForTraitChanges_7handlerSo25UITraitChangeRegistration_pSayAC0I10Definition_pXpG_yx_So0I10CollectionCtctSo0I11EnvironmentRzlF"
+"_$sSo16UIViewControllerC5UIKitE23registerForTraitChanges_7handlerSo25UITraitChangeRegistration_pSayAC0I10Definition_pXpG_yx_So0I10CollectionCtctSo0I11EnvironmentRzlF":
+    mov x0, xzr
+    ret
+
+.globl "_$sSo16UIViewControllerC5UIKitE23registerForTraitChanges_6actionSo25UITraitChangeRegistration_pSayAC0I10Definition_pXpG_10ObjectiveC8SelectorVtF"
+"_$sSo16UIViewControllerC5UIKitE23registerForTraitChanges_6actionSo25UITraitChangeRegistration_pSayAC0I10Definition_pXpG_10ObjectiveC8SelectorVtF":
+    mov x0, xzr
+    ret
+
