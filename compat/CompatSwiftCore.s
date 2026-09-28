@@ -244,3 +244,16 @@
 .globl "_$s7SwiftUI8BindableVMn"
 .set "_$s7SwiftUI8BindableVMn", "_$s15CompatSwiftCore10UBBindableVMn"
 
+// SwiftUI StrokeShapeView ABI aliases for iOS 16
+// Carbon imports the iOS 17+ SwiftUI type metadata and View conformance.
+// CompatStrokeShape.swift reproduces the frozen one-field layout using iOS 16
+// SwiftUI building blocks, so expose its metadata under Apple's ABI names.
+.globl "_$s7SwiftUI15StrokeShapeViewVMa"
+.set "_$s7SwiftUI15StrokeShapeViewVMa", "_$s15CompatSwiftCore17UBStrokeShapeViewVMa"
+
+.globl "_$s7SwiftUI15StrokeShapeViewVMn"
+.set "_$s7SwiftUI15StrokeShapeViewVMn", "_$s15CompatSwiftCore17UBStrokeShapeViewVMn"
+
+.globl "_$s7SwiftUI15StrokeShapeViewVyxq_q0_GAA0E0AAMc"
+.set "_$s7SwiftUI15StrokeShapeViewVyxq_q0_GAA0E0AAMc", "_$s15CompatSwiftCore17UBStrokeShapeViewVyxq_q0_G7SwiftUI4ViewAAMc"
+
