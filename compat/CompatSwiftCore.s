@@ -237,3 +237,10 @@
 .globl "_$s11Observation10ObservableMp"
 .set "_$s11Observation10ObservableMp", "_$s15CompatSwiftCore12UBObservableMp"
 
+// SwiftUI Bindable metadata aliases for iOS 16
+.globl "_$s7SwiftUI8BindableVMa"
+.set "_$s7SwiftUI8BindableVMa", "_$s15CompatSwiftCore10UBBindableVMa"
+
+.globl "_$s7SwiftUI8BindableVMn"
+.set "_$s7SwiftUI8BindableVMn", "_$s15CompatSwiftCore10UBBindableVMn"
+
