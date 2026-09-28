@@ -254,6 +254,6 @@
 .globl "_$s7SwiftUI15StrokeShapeViewVMn"
 .set "_$s7SwiftUI15StrokeShapeViewVMn", "_$s15CompatSwiftCore17UBStrokeShapeViewVMn"
 
-.globl "_$s7SwiftUI15StrokeShapeViewVyxq_q0_GAA0E0AAMc"
-.set "_$s7SwiftUI15StrokeShapeViewVyxq_q0_GAA0E0AAMc", "_$s15CompatSwiftCore17UBStrokeShapeViewVyxq_q0_G7SwiftUI4ViewAAMc"
+// View-conformance alias is added after inspecting the compiler-emitted
+// canonical mangling for UBStrokeShapeView.
 
