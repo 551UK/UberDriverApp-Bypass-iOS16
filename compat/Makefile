@@ -4,7 +4,7 @@ TARGET = iphone:clang:16.5:16.0
 include $(THEOS)/makefiles/common.mk
 
 LIBRARY_NAME = CompatSwiftCore
-CompatSwiftCore_FILES = CompatSwiftCore.s AVAudioApplicationCompat.m CompatConcurrency.swift CompatSwiftUI.swift CompatObservation.swift
+CompatSwiftCore_FILES = CompatSwiftCore.s AVAudioApplicationCompat.m CompatConcurrency.swift CompatSwiftUI.swift CompatObservation.swift CompatBindable.swift
 
 # The iOS 26-built Uber Driver binary binds several Swift overlay symbols
 # directly to their parent frameworks. On iOS 16 those symbols still live
