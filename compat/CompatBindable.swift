@@ -4,7 +4,6 @@ import SwiftUI
 // Apple's Bindable stores only the wrapped object. On iOS 16 we reproduce that
 // storage and create ordinary SwiftUI.Binding values with get/set closures.
 
-@dynamicMemberLookup
 @propertyWrapper
 public struct UBBindable<Value>: DynamicProperty {
     public var wrappedValue: Value
