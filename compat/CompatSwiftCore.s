@@ -223,3 +223,17 @@
 .globl "_$s7SwiftUI4ViewPAAE8onChange2of7initial_Qrqd___SbyyctSQRd__lFQOMQ"
 .set "_$s7SwiftUI4ViewPAAE8onChange2of7initial_Qrqd___SbyyctSQRd__lFQOMQ", "_$s7SwiftUI4ViewP06CompatA4CoreE15ub_onChangeZero2of7initial_Qrqd___SbyyctSQRd__lFQOMQ"
 
+// Observation module metadata aliases for iOS 16
+// CompatObservation.swift supplies a minimal ABI-compatible registrar and an
+// empty observable protocol. Export their metadata using the names Carbon was
+// linked against from the iOS 17+ Observation module.
+
+.globl "_$s11Observation0A9RegistrarVMa"
+.set "_$s11Observation0A9RegistrarVMa", "_$s15CompatSwiftCore22UBObservationRegistrarVMa"
+
+.globl "_$s11Observation0A9RegistrarVMn"
+.set "_$s11Observation0A9RegistrarVMn", "_$s15CompatSwiftCore22UBObservationRegistrarVMn"
+
+.globl "_$s11Observation10ObservableMp"
+.set "_$s11Observation10ObservableMp", "_$s15CompatSwiftCore12UBObservableMp"
+
