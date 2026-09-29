@@ -257,3 +257,13 @@
 .globl "_$s7SwiftUI15StrokeShapeViewVyxq_q0_GAA0E0AAMc"
 .set "_$s7SwiftUI15StrokeShapeViewVyxq_q0_GAA0E0AAMc", "_$s15CompatSwiftCore17UBStrokeShapeViewVyxq_q0_G0B2UI0F0AAMc"
 
+// SwiftUI StrokeBorderShapeView ABI aliases for iOS 16
+.globl "_$s7SwiftUI21StrokeBorderShapeViewVMa"
+.set "_$s7SwiftUI21StrokeBorderShapeViewVMa", "_$s15CompatSwiftCore23UBStrokeBorderShapeViewVMa"
+
+.globl "_$s7SwiftUI21StrokeBorderShapeViewVMn"
+.set "_$s7SwiftUI21StrokeBorderShapeViewVMn", "_$s15CompatSwiftCore23UBStrokeBorderShapeViewVMn"
+
+// View-conformance alias is added after inspecting the compiler-emitted
+// canonical mangling for UBStrokeBorderShapeView.
+
