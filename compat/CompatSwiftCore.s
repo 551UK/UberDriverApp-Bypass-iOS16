@@ -264,6 +264,6 @@
 .globl "_$s7SwiftUI21StrokeBorderShapeViewVMn"
 .set "_$s7SwiftUI21StrokeBorderShapeViewVMn", "_$s15CompatSwiftCore23UBStrokeBorderShapeViewVMn"
 
-// View-conformance alias is added after inspecting the compiler-emitted
-// canonical mangling for UBStrokeBorderShapeView.
+.globl "_$s7SwiftUI21StrokeBorderShapeViewVyxq_q0_GAA0F0AAMc"
+.set "_$s7SwiftUI21StrokeBorderShapeViewVyxq_q0_GAA0F0AAMc", "_$s15CompatSwiftCore23UBStrokeBorderShapeViewVyxq_q0_G0B2UI0G0AAMc"
 
