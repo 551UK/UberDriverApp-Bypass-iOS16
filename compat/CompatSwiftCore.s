@@ -267,3 +267,12 @@
 .globl "_$s7SwiftUI21StrokeBorderShapeViewVyxq_q0_GAA0F0AAMc"
 .set "_$s7SwiftUI21StrokeBorderShapeViewVyxq_q0_GAA0F0AAMc", "_$s15CompatSwiftCore23UBStrokeBorderShapeViewVyxq_q0_G0B2UI0G0AAMc"
 
+// iOS 17 mutable-traits property compatibility
+// iOS 16 has no UIMutableTraits protocol. Trait mutation itself is already
+// degraded by the modifyingTraits compatibility path, so ignore this setter.
+.text
+.p2align 2
+.globl "_$s5UIKit15UIMutableTraitsPAAE16legibilityWeightSo012UILegibilityE0Vvs"
+"_$s5UIKit15UIMutableTraitsPAAE16legibilityWeightSo012UILegibilityE0Vvs":
+    ret
+
