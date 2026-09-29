@@ -1,6 +1,10 @@
 #import <Foundation/Foundation.h>
 #import <AVFAudio/AVFAudio.h>
 
+// Added after iOS 16. Export the public port-name constant so newer code can
+// compare against it; older AVAudioSession simply will not report such a port.
+AVAudioSessionPort const AVAudioSessionPortContinuityMicrophone = @"ContinuityMicrophone";
+
 // AVAudioApplication was introduced after iOS 16. Uber 4.584 references the
 // class at launch. This compatibility class forwards recording permission to
 // AVAudioSession, which provides the equivalent API on iOS 16. App-level input
