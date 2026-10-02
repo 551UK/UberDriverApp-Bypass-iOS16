@@ -24,30 +24,74 @@
     str x1, [x8, #0x20]
     ret
 
-// Supply AnyObject metadata and tail-call generic entry points that
-// exist in the older Swift runtime.
+// Bridge Swift 5.9 AnyObject pre-specializations to the generic iOS 16
+// entry points. Generic methods on Array/ContiguousArray do NOT take Element
+// metadata directly: they take the instantiated nominal metadata for
+// Array<AnyObject> / ContiguousArray<AnyObject>. Passing _$syXlN directly
+// makes iOS 16 dereference the wrong metadata layout and crash in
+// _swift_isClassOrObjCExistentialType.
+//
+// Metadata accessor ABI on arm64:
+//   x0 = MetadataRequest (0 = complete)
+//   x1 = generic argument metadata
+//   x0 = instantiated nominal metadata
+//
+// Swift instance self remains in x20. Explicit integer arguments are saved
+// across the metadata-accessor call and restored before tail-calling the
+// generic iOS 16 implementation.
+
 .globl "_$ss15ContiguousArrayV034_makeUniqueAndReserveCapacityIfNotD0yyFyXl_Ts5"
 "_$ss15ContiguousArrayV034_makeUniqueAndReserveCapacityIfNotD0yyFyXl_Ts5":
-    adrp x0, "_$syXlN"@GOTPAGE
-    ldr  x0, [x0, "_$syXlN"@GOTPAGEOFF]
+    stp x29, x30, [sp, #-0x10]!
+    mov x29, sp
+    mov x0, xzr
+    adrp x1, "_$syXlN"@GOTPAGE
+    ldr  x1, [x1, "_$syXlN"@GOTPAGEOFF]
+    bl "_$ss15ContiguousArrayVMa"
+    ldp x29, x30, [sp], #0x10
     b "_$ss15ContiguousArrayV034_makeUniqueAndReserveCapacityIfNotD0yyF"
 
 .globl "_$ss15ContiguousArrayV15reserveCapacityyySiFyXl_Ts5"
 "_$ss15ContiguousArrayV15reserveCapacityyySiFyXl_Ts5":
+    sub sp, sp, #0x20
+    stp x29, x30, [sp, #0x10]
+    add x29, sp, #0x10
+    str x0, [sp]
+    mov x0, xzr
     adrp x1, "_$syXlN"@GOTPAGE
     ldr  x1, [x1, "_$syXlN"@GOTPAGEOFF]
+    bl "_$ss15ContiguousArrayVMa"
+    mov x1, x0
+    ldr x0, [sp]
+    ldp x29, x30, [sp, #0x10]
+    add sp, sp, #0x20
     b "_$ss15ContiguousArrayV15reserveCapacityyySiF"
 
 .globl "_$ss15ContiguousArrayV36_reserveCapacityAssumingUniqueBuffer8oldCountySi_tFyXl_Ts5"
 "_$ss15ContiguousArrayV36_reserveCapacityAssumingUniqueBuffer8oldCountySi_tFyXl_Ts5":
+    sub sp, sp, #0x20
+    stp x29, x30, [sp, #0x10]
+    add x29, sp, #0x10
+    str x0, [sp]
+    mov x0, xzr
     adrp x1, "_$syXlN"@GOTPAGE
     ldr  x1, [x1, "_$syXlN"@GOTPAGEOFF]
+    bl "_$ss15ContiguousArrayVMa"
+    mov x1, x0
+    ldr x0, [sp]
+    ldp x29, x30, [sp, #0x10]
+    add sp, sp, #0x20
     b "_$ss15ContiguousArrayV36_reserveCapacityAssumingUniqueBuffer8oldCountySi_tF"
 
 .globl "_$sSa034_makeUniqueAndReserveCapacityIfNotB0yyFyXl_Ts5"
 "_$sSa034_makeUniqueAndReserveCapacityIfNotB0yyFyXl_Ts5":
-    adrp x0, "_$syXlN"@GOTPAGE
-    ldr  x0, [x0, "_$syXlN"@GOTPAGEOFF]
+    stp x29, x30, [sp, #-0x10]!
+    mov x29, sp
+    mov x0, xzr
+    adrp x1, "_$syXlN"@GOTPAGE
+    ldr  x1, [x1, "_$syXlN"@GOTPAGEOFF]
+    bl "_$sSaMa"
+    ldp x29, x30, [sp], #0x10
     b "_$sSa034_makeUniqueAndReserveCapacityIfNotB0yyF"
 
 // Adapt the remaining AnyObject pre-specializations to their generic
