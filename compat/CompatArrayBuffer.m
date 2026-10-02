@@ -3,6 +3,7 @@
 #import <stdint.h>
 
 extern void *swift_retain(void *object);
+extern id objc_retain(id object);
 
 // Swift 5.9 pre-specialization ABI used by Carbon:
 //   x0 = index
