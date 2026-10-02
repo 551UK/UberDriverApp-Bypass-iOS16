@@ -53,20 +53,9 @@
 // Adapt the remaining AnyObject pre-specializations to their generic
 // iOS 16 Swift runtime entry points. Register placement is the Swift ABI:
 // metadata is appended after the explicit/self value arguments.
-.globl "_$ss12_ArrayBufferV19_getElementSlowPathyyXlSiFyXl_Ts5"
-"_$ss12_ArrayBufferV19_getElementSlowPathyyXlSiFyXl_Ts5":
-    // The generic iOS 16 entry returns Element indirectly through x8 because
-    // Element has unknown size. The Swift 5.9 class pre-specialization returns
-    // AnyObject directly in x0. Bridge the two ABIs with an 8-byte result slot.
-    stp x29, x30, [sp, #-0x20]!
-    mov x29, sp
-    add x8, sp, #0x10
-    adrp x2, "_$syXlN"@GOTPAGE
-    ldr  x2, [x2, "_$syXlN"@GOTPAGEOFF]
-    bl "_$ss12_ArrayBufferV19_getElementSlowPathyyXlSiF"
-    ldr x0, [sp, #0x10]
-    ldp x29, x30, [sp], #0x20
-    ret
+// The AnyObject _ArrayBuffer._getElementSlowPath pre-specialization is
+// implemented in CompatArrayBuffer.m. Its specialized ABI differs from the
+// generic iOS16 runtime entry point, so it must not be tail-called here.
 
 .globl "_$sSa16_createNewBuffer14bufferIsUnique15minimumCapacity13growForAppendySb_SiSbtFyXl_Ts5"
 "_$sSa16_createNewBuffer14bufferIsUnique15minimumCapacity13growForAppendySb_SiSbtFyXl_Ts5":
