@@ -10,6 +10,7 @@
 #import <stdlib.h>
 #import <dlfcn.h>
 #import <strings.h>
+#import <unistd.h>
 
 static NSString * const UBTargetOSVersion = @"18.5";
 static NSString * const UBTargetOSLongVersion = @"18.5.0";
