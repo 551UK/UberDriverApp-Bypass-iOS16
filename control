@@ -1,8 +1,8 @@
 Package: com.551.uberdriverbypass
 Name: UberDriverApp Bypass iOS 16
-Version: 0.34.0
+Version: 0.34.1
 Architecture: iphoneos-arm64
-Description: Exact 4.584.10000 compatibility profile using metadata taken directly from the uploaded 4.584 IPA, with iOS 18.5 runtime identity.
+Description: Exact 4.584.10000 compatibility profile with persistent multi-path diagnostic logging and iOS 18.5 runtime identity.
 Maintainer: 551UK
 Author: 551UK
 Section: Tweaks
