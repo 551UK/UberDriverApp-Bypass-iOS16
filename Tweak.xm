@@ -44,18 +44,124 @@ static BOOL UBIsMainBundle(NSBundle *bundle) {
 
 // Compatibility metadata is changed and only explicit force-upgrade online blockers
 // are filtered. Account, document and unrelated Required Actions remain untouched.
+//
+// Diagnostics deliberately write to several sandbox-safe locations. On some
+// jailbreak/container combinations NSHomeDirectory() can be usable while the
+// conventional Documents path is not yet available when the tweak constructor
+// runs. Mirroring the log means there is still something to retrieve even when
+// one path fails.
+//
+// Preferred files, in order:
+//   <app container>/Documents/UberDriverBypass.log
+//   <app container>/Library/Caches/UberDriverBypass.log
+//   <app container>/tmp/UberDriverBypass.log
+//   <app container>/UberDriverBypass.log
+//
+// We also mirror every line to NSLog so there is a system-log fallback.
+static NSArray<NSString *> *UBDiagnosticPaths(void) {
+    NSMutableArray<NSString *> *paths = [NSMutableArray array];
+
+    NSArray<NSURL *> *documents =
+        [[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory
+                                                inDomains:NSUserDomainMask];
+    if (documents.firstObject.path.length) {
+        [paths addObject:[documents.firstObject.path
+                          stringByAppendingPathComponent:@"UberDriverBypass.log"]];
+    }
+
+    NSArray<NSURL *> *caches =
+        [[NSFileManager defaultManager] URLsForDirectory:NSCachesDirectory
+                                                inDomains:NSUserDomainMask];
+    if (caches.firstObject.path.length) {
+        [paths addObject:[caches.firstObject.path
+                          stringByAppendingPathComponent:@"UberDriverBypass.log"]];
+    }
+
+    NSString *tmp = NSTemporaryDirectory();
+    if (tmp.length) {
+        [paths addObject:[tmp stringByAppendingPathComponent:@"UberDriverBypass.log"]];
+    }
+
+    NSString *home = NSHomeDirectory();
+    if (home.length) {
+        [paths addObject:[home stringByAppendingPathComponent:@"UberDriverBypass.log"]];
+
+        // Keep the historical path as an explicit fallback even if
+        // URLsForDirectory returned something different.
+        NSString *legacy = [home stringByAppendingPathComponent:
+                            @"Documents/UberDriverBypass.log"];
+        if (![paths containsObject:legacy]) [paths addObject:legacy];
+    }
+
+    return paths;
+}
+
+static BOOL UBAppendDiagnosticLine(NSString *path, NSData *data) {
+    if (!path.length || !data.length) return NO;
+
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *directory = [path stringByDeletingLastPathComponent];
+    if (directory.length) {
+        [fm createDirectoryAtPath:directory
+      withIntermediateDirectories:YES
+                       attributes:nil
+                            error:nil];
+    }
+
+    if (![fm fileExistsAtPath:path]) {
+        if (![fm createFileAtPath:path contents:nil attributes:nil]) return NO;
+    }
+
+    NSFileHandle *file = [NSFileHandle fileHandleForWritingAtPath:path];
+    if (!file) return NO;
+
+    BOOL wrote = YES;
+    @try {
+        [file seekToEndOfFile];
+        [file writeData:data];
+        [file synchronizeFile];
+    } @catch (NSException *exception) {
+        (void)exception;
+        wrote = NO;
+    } @finally {
+        [file closeFile];
+    }
+    return wrote;
+}
+
 static void UBDiagnostic(NSString *event) {
     static NSUInteger count = 0;
     @synchronized (UBTargetAppVersion) {
-        if (count++ >= 400) return;
-        NSString *path = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"];
-        NSString *line = [NSString stringWithFormat:@"%@ %@\n", NSDate.date, event];
-        NSFileHandle *file = [NSFileHandle fileHandleForWritingAtPath:path];
-        if (!file) { [line writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil]; return; }
-        @try { [file seekToEndOfFile]; [file writeData:[line dataUsingEncoding:NSUTF8StringEncoding]]; }
-        @catch (NSException *exception) { (void)exception; }
-        @finally { [file closeFile]; }
+        if (count++ >= 800) return;
+
+        NSString *safeEvent = [event isKindOfClass:NSString.class] ? event : [event description];
+        if (!safeEvent) safeEvent = @"(null event)";
+        NSString *line = [NSString stringWithFormat:@"%@ %@\n", NSDate.date, safeEvent];
+        NSData *data = [line dataUsingEncoding:NSUTF8StringEncoding];
+
+        BOOL wroteAny = NO;
+        for (NSString *path in UBDiagnosticPaths()) {
+            if (UBAppendDiagnosticLine(path, data)) wroteAny = YES;
+        }
+
+        NSLog(@"[UberDriverBypass] %@", safeEvent);
+
+        // If every file path failed, make that visible in the unified log too.
+        if (!wroteAny) {
+            NSLog(@"[UberDriverBypass] WARNING: failed to write diagnostics to every candidate file path");
+        }
     }
+}
+
+static void UBStartDiagnosticSession(void) {
+    NSString *home = NSHomeDirectory() ?: @"";
+    NSString *tmp = NSTemporaryDirectory() ?: @"";
+    NSString *paths = [[UBDiagnosticPaths() componentsJoinedByString:@" | "] copy];
+
+    UBDiagnostic(@"================ NEW UBER DRIVER SESSION ================");
+    UBDiagnostic([NSString stringWithFormat:
+        @"diagnostic paths=%@ home=%@ tmp=%@ pid=%d",
+        paths ?: @"", home, tmp, getpid()]);
 }
 
 static NSString *UBNormalizedKey(NSString *key) {
@@ -2341,9 +2447,12 @@ static int UBHookSysctlByName(const char *name, void *oldp, size_t *oldlenp, con
                        (void *)&UBHookSysctlByName,
                        (void **)&UBOrigSysctlByName);
 
-        [[NSFileManager defaultManager] removeItemAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/UberDriverBypass.log"] error:nil];
+        // Do not delete the previous log on launch. Keeping session boundaries
+        // makes very-early exits diagnosable even if the next launch dies before
+        // the first network hook is reached.
+        UBStartDiagnosticSession();
         UBDiagnostic([NSString stringWithFormat:
-            @"UberDriverBypass 0.34.0 loaded; mode=%@ actualApp=%@ actualOS=%@ targetApp=%@ targetOS=%@ targetBuild=%@",
+            @"UberDriverBypass 0.34.1 loaded; mode=%@ actualApp=%@ actualOS=%@ targetApp=%@ targetOS=%@ targetBuild=%@",
             UBReferenceCaptureMode ? @"REFERENCE_CAPTURE" : @"COMPATIBILITY_TEST",
             UBActualAppVersion ?: @"", UBActualOSVersion ?: @"", UBTargetAppVersion,
             UBTargetOSVersion, UBTargetOSBuild]);
