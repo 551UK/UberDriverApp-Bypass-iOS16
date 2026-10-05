@@ -1,4 +1,4 @@
-name: Build v0.34
+name: Build v0.34.1
 
 on:
   workflow_dispatch:
@@ -36,15 +36,15 @@ jobs:
           test -n "$deb"
           test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
           test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64"
-          test "$(dpkg-deb -f "$deb" Version)" = "0.34.0"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.34.1"
 
       - name: Publish release
         uses: ncipollo/release-action@v1
         with:
-          tag: v0.34.0
-          name: UberDriverApp iOS 16 compatibility v0.34.0
+          tag: v0.34.1
+          name: UberDriverApp iOS 16 compatibility v0.34.1
           body: |
-            Exact 4.584.10000 metadata compatibility profile using values taken from the supplied 4.584 IPA.
+            Exact 4.584.10000 metadata compatibility profile with persistent multi-path diagnostic logging.
           artifacts: packages/*.deb
           artifactErrorsFailBuild: true
           allowUpdates: true
