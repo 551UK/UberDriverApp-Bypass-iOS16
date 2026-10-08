@@ -1,0 +1,76 @@
+name: Build RootHide v0.34.2
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'Tweak.xm'
+      - 'Makefile'
+      - 'UberDriverBypass.plist'
+      - '.github/workflows/build-roothide-v0342.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: uberdriver-roothide-v0342
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up base Theos and iOS SDK
+        uses: Randomblock1/theos-action@v1
+        with:
+          theos-sdks: https://github.com/theos/sdks
+          theos-sdks-branch: master
+
+      - name: Switch Theos to RootHide fork
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C "$THEOS" remote add roothide https://github.com/roothide/theos.git || true
+          git -C "$THEOS" fetch --depth=1 roothide master
+          git -C "$THEOS" checkout -B roothide-build FETCH_HEAD
+          git -C "$THEOS" submodule update --init --recursive
+
+      - name: Prepare RootHide package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i 's/^Version: .*/Version: 0.34.2/' control
+          sed -i 's/^Architecture: .*/Architecture: iphoneos-arm64e/' control
+          sed -i 's/UberDriverBypass 0.34.1 loaded/UberDriverBypass 0.34.2-roothide loaded/g' Tweak.xm
+
+      - name: Build RootHide package
+        run: make clean package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide
+
+      - name: Validate RootHide package
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb="$(find packages -maxdepth 1 -name '*.deb' -print -quit)"
+          test -n "$deb"
+          test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
+          test "$(dpkg-deb -f "$deb" Version)" = "0.34.2"
+          test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64e"
+          dpkg-deb -c "$deb" | grep -E '/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass\.(dylib|plist)$'
+
+      - name: Publish RootHide release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: v0.34.2-roothide
+          name: UberDriverApp iOS 16 compatibility v0.34.2 RootHide
+          body: |
+            RootHide-native build for Dopamine RootHide / RootHide Bootstrap.
+            Includes persistent multi-path diagnostic logging.
+          artifacts: packages/*.deb
+          artifactErrorsFailBuild: true
+          allowUpdates: true
+          replacesArtifacts: true
+          makeLatest: true
