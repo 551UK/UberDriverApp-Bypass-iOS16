@@ -59,7 +59,9 @@ jobs:
           test "$(dpkg-deb -f "$deb" Package)" = "com.551.uberdriverbypass"
           test "$(dpkg-deb -f "$deb" Version)" = "0.34.2"
           test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64e"
-          dpkg-deb -c "$deb" | grep -E '/Library/MobileSubstrate/DynamicLibraries/UberDriverBypass\.(dylib|plist)$'
+          dpkg-deb -c "$deb" | tee /tmp/package-list.txt
+          grep -q 'UberDriverBypass.dylib' /tmp/package-list.txt
+          grep -q 'UberDriverBypass.plist' /tmp/package-list.txt
 
       - name: Publish RootHide release
         uses: ncipollo/release-action@v1
